@@ -1,25 +1,35 @@
-#include <async/Boot.h>
 #include <async/Log.h>
-#include <async/State.h>
+#include <async/Boot.h>
+#include <async/Chain.h>
 
 using namespace async;
 
-State<int> counter(0);
-Executor core0;
-
 Boot boot([](Executor * executor) {
-  Serial.begin(115200); 
-  info("Boot");
+  Serial.begin(115200);
 
-  executor->add(counter.onChange([](int current, int prev) {
-    info("value changed from %d to %d", prev, current);
-  }));
-
-  executor->onDelay(1000, []() {
-    counter.getAndSet([](int current) {
-      return current * current;
-    });
+  executor->onRepeat(1000, []() {
+    info("onRepeat");
   });
 
-  counter.set(10);
+  auto ch = chain(0)
+      ->delay(Duration(2000))
+      ->then([](int val) {
+        info("Start value %d", val);
+        return val+1;
+      })
+      ->then([](int val) {
+        info("Intermediate value %d", val);
+        return val+1;
+      })
+      ->delay(Duration(2000))
+      ->animate(0, 100, Duration(2000), [](int current, int target) {
+        info("Animate value %d, value %d", current, target);
+        return target + current;
+      })
+      ->then([](int val) {
+        info("Final value %d", val);
+        return val;
+      });
+
+  executor->add(ch);
 });
