@@ -1,3 +1,4 @@
+#include <async/Log.h>
 #include <async/Boot.h>
 
 using namespace async;

@@ -1,11 +1,10 @@
-#include <async/Boot.h>
 #include <async/Log.h>
+#include <async/Boot.h>
 #include <async/State.h>
 
 using namespace async;
 
 State<int> counter(0);
-Executor core0;
 
 Boot boot([](Executor * executor) {
   Serial.begin(115200); 

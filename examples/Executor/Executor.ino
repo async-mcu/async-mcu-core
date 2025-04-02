@@ -6,7 +6,7 @@
 
 using namespace async;
 
-Executor core1;
+Executor executor;
 
 void setup() {
   Serial.begin(115200); 
@@ -40,14 +40,14 @@ void setup() {
   });
 
   //core1.add(delayTask);
-  core1.add(repeatTask1);
-  core1.add(repeatTask2);
-  core1.add(delayTask1);
-  core1.add(delayTask2);
-  core1.add(delayTask3);
-  core1.add(demandTask);
+  executor.add(repeatTask1);
+  executor.add(repeatTask2);
+  executor.add(delayTask1);
+  executor.add(delayTask2);
+  executor.add(delayTask3);
+  executor.add(demandTask);
 }
 
 void loop() {
-  core1.tick();
+  executor.tick();
 }

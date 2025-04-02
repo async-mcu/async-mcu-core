@@ -44,6 +44,7 @@ namespace async {
              * @brief Destructor
              */
             ~Task() {
+                Serial.println("~Task");
                 //delete duration;
                 delete from;
             }
