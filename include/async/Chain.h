@@ -34,8 +34,8 @@ namespace async {
         unsigned long operationStartTime = 0;
         LinkedList<ChainOperation*> operations;
         int currentOperationIndex = 0;
-        int interruptPin = -1;
-        int interruptState = HIGH;
+        bool shouldLoop = false; // Флаг зацикливания
+        bool isCancelled = false; // Флаг отмены выполнения
 
     public:
         Chain(T initialValue) : value(initialValue) {}
@@ -65,21 +65,29 @@ namespace async {
             return this;
         }
 
-        Chain* interrupt(int pin, int state = HIGH) {
-            interruptPin = pin;
-            interruptState = state;
-            pinMode(pin, INPUT_PULLUP);
+        Chain* loop() {
+            shouldLoop = true;
             return this;
         }
 
+        bool cancel() override {
+            isCancelled = true; // Устанавливаем флаг отмены
+            return true;
+        }
+
         bool tick() override {
-            // Check interrupt
-            if (interruptPin != -1 && digitalRead(interruptPin) == interruptState) {
+            // Проверка на отмену выполнения
+            if (isCancelled) {
                 return false;
             }
 
             // No more operations
             if (currentOperationIndex >= operations.size()) {
+                if (shouldLoop && !isCancelled) {
+                    currentOperationIndex = 0;
+                    return true;
+                }
+                
                 return false;
             }
 
