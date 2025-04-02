@@ -1,10 +1,10 @@
 {
     "version": 1,
-    "author": "Uri Shaked",
+    "author": "Lampa",
     "editor": "wokwi",
-    "parts": [{ "id": "mega", "type": "wokwi-arduino-mega", "top": 120, "left": 20 }],
+    "parts": [{ "id": "uno", "type": "wokwi-arduino-uno", "top": 120, "left": 20 }],
     "connections": [
-        [ "mega:0", "$serialMonitor:TX", "" ],
-        [ "mega:1", "$serialMonitor:RX", "" ]
+        [ "uno:0", "$serialMonitor:TX", "" ],
+        [ "uno:1", "$serialMonitor:RX", "" ]
     ]
   }

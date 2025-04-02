@@ -1,0 +1,20 @@
+{
+  "name": "async-mcu-core",
+  "version": "0.0.1",
+  "description": "",
+  "keywords": "",
+  "repository": {
+      "type": "git",
+      "url": "https://github.com/async-mcu/async-mcu-core.git"
+  },
+  "authors": [
+      {
+          "name": "Lampa",
+          "url": "https://github.com/lampaa"
+      }
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/async-mcu",
+  "frameworks": "arduino",
+  "platforms": "arduino"
+}
