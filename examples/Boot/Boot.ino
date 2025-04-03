@@ -1,5 +1,6 @@
 #include <async/Log.h>
 #include <async/Boot.h>
+#include <async/Executor.h>
 
 using namespace async;
 

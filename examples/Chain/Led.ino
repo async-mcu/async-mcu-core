@@ -9,15 +9,13 @@ Boot boot([](Executor * executor) {
 
   pinMode(LED_BUILTIN, OUTPUT);
 
-  auto ch = chain(0)
-      ->then([](int val) {
+  auto ch = chain()
+      ->then([]() {
         digitalWrite(LED_BUILTIN, HIGH);
-        return 0;
       })
       ->delay(Duration(1000))
-      ->then([](int val) {
+      ->then([]() {
         digitalWrite(LED_BUILTIN, LOW);
-        return 0;
       })
       ->delay(Duration(1000))
       ->loop();
