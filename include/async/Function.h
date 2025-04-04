@@ -36,6 +36,8 @@ class Function<Result(Args...)> {
 public:
     Function() : f(0) {}
     
+    Function(decltype(nullptr)) : f(0) {}  // Аналог std::nullptr_t
+    
     template<typename Func>
     Function(const Func& func) : f(new ConcreteFunction<Func, Result, Args...>(func)) {}
     
@@ -50,11 +52,11 @@ public:
     }
     
     Result operator()(Args... args) const {
-        if (f) {
-            return (*f)(args...);
+        if (!f) {
+            // Простая обработка ошибки вместо исключения
+            return Result();
         }
-        // Простая обработка ошибки вместо исключения
-        return Result();
+        return (*f)(args...);
     }
     
     Function& operator=(const Function& other) {
@@ -72,5 +74,15 @@ public:
             other.f = 0;
         }
         return *this;
+    }
+    
+    Function& operator=(decltype(nullptr)) {
+        delete f;
+        f = 0;
+        return *this;
+    }
+    
+    explicit operator bool() const {
+        return f != 0;
     }
 };

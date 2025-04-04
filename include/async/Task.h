@@ -172,5 +172,10 @@ namespace async {
 
                 return true;
             }
+
+            IRAM_ATTR static void isr(void* arg) {
+                Task *ptr = (Task*) arg;
+                ptr->demand();
+            }
     };
 }

@@ -55,7 +55,7 @@ namespace async {
              * If a Tick's tick() returns false, it is automatically removed from the executor.
              */
             bool tick() {
-                for(int i=0; i < list.size(); i++) {
+                for(int i=0, size=list.size(); i < size; i++) {
                     Tick * tick = list.get(i);
 
                     if(!tick->tick()) {
@@ -137,6 +137,7 @@ namespace async {
                 return task;
             }
 
+            ///@}
             /**
              * @brief Create and add an interrupt-based task
              * @param pin GPIO pin number to monitor
@@ -149,6 +150,7 @@ namespace async {
             Task * onInterrupt(uint8_t pin, int mode, voidCallback cb) {
                 auto task = new Task(Task::DEMAND, cb);
                 this->add(task);
+                attachInterruptArg(pin, task->isr, task, mode);
                 return task;
             }
             ///@}

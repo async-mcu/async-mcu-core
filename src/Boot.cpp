@@ -1,7 +1,24 @@
 #include <async/Boot.h>
 
 using namespace async;
-Boot* Boot::boots[2] = { NULL, NULL };
+
+LinkedList<Boot *> core0; ///< Array of boot instances for each core
+LinkedList<Boot *> core1; ///< Array of boot instances for each core
+
+Boot::Boot(initCallback initCallback) {
+    core0.append(this);
+    this->callback = initCallback;
+    this->executor = new Executor();
+}
+
+LinkedList<Boot *> & Boot::getBoots(int core) {
+    if(core == 0) {
+        return core0;
+    }
+    if(core == 1) {
+        return core1;
+    }
+}
 
 
 #ifdef ARDUINO_ARCH_ESP32
@@ -12,9 +29,14 @@ TaskHandle_t taskLoopCore1;
 void setup() {
     xTaskCreatePinnedToCore([] (void * param) 
         { 
-            Boot::getBoot(0)->init(); 
+            for(int i=0, size = core0.size(); i < size; i++) {
+                core0.get(i)->init();
+            }
+
             while (true) {
-                Boot::getBoot(0)->getExecutor()->tick();
+                for(int i=0, size = core0.size(); i < size; i++) {
+                    core0.get(i)->init();
+                }
             } 
         }, // Task function.
         "",     // name of task. //
@@ -26,9 +48,14 @@ void setup() {
 
     xTaskCreatePinnedToCore([] (void * param) 
         { 
-            //Boot::getBoot(1)->init(); 
+            for(int i=0, size = core1.size(); i < size; i++) {
+                core1.get(i)->init();
+            }
+
             while (true) {
-                //Boot::getBoot(1)->getExecutor()->tick();
+                for(int i=0, size = core1.size(); i < size; i++) {
+                    core1.get(i)->init();
+                }
             } 
         }, // Task function.
         "",     // name of task. //
@@ -43,11 +70,13 @@ void loop() {
 }
 #else
 void setup() {
-    Boot::getBoot(0)->init();
+    for(int i=0, size = core0.size(); i < size; i++) {
+        core0.get(i)->init();
+    }
 }
 void loop() {
-    Boot::getBoot(0)->getExecutor()->tick();
+    for(int i=0, size = core0.size(); i < size; i++) {
+        core0.get(i)->getExecutor()->tick();
+    }
 }
 #endif
-
-

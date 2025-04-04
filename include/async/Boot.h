@@ -22,25 +22,15 @@ namespace async {
      */
     class Boot {
         private:
-            static Boot * boots[2]; ///< Array of boot instances for each core
             Executor * executor;   ///< Pointer to the executor instance
             initCallback callback; ///< Initialization callback function
 
         public:
-            /// Core 0 identifier
-            static const byte CORE0 = 0;
-            /// Core 1 identifier
-            static const byte CORE1 = 1;
-
             /**
              * @brief Construct a new Boot instance for core 0
              * @param initCallback The initialization callback function
              */
-            Boot(initCallback initCallback) {
-                this->boots[0] = this;
-                this->callback = initCallback;
-                this->executor = new Executor();
-            }
+            Boot(initCallback initCallback);
 
             /**
              * @brief Initialize the boot process by invoking the callback
@@ -62,9 +52,7 @@ namespace async {
              * @param index Core index (0 or 1)
              * @return Pointer to the Boot instance for the specified core
              */
-            static Boot * getBoot(int index) {
-                return boots[index];
-            }
+            static LinkedList<Boot *> & getBoots(int core);
 
             #ifdef ARDUINO_ARCH_ESP32
             /**
