@@ -11,6 +11,18 @@ Boot::Boot(initCallback initCallback) {
     this->executor = new Executor();
 }
 
+Boot::Boot(byte core, initCallback initCallback) {
+    if(core == 0) {
+        core0.append(this);
+    }
+    else {
+        core1.append(this);
+    }
+    
+    this->callback = initCallback;
+    this->executor = new Executor();
+}
+
 LinkedList<Boot *> & Boot::getBoots(int core) {
     if(core == 0) {
         return core0;
@@ -35,7 +47,7 @@ void setup() {
 
             while (true) {
                 for(int i=0, size = core0.size(); i < size; i++) {
-                    core0.get(i)->init();
+                    core0.get(i)->getExecutor()->tick();
                 }
             } 
         }, // Task function.
@@ -54,7 +66,7 @@ void setup() {
 
             while (true) {
                 for(int i=0, size = core1.size(); i < size; i++) {
-                    core1.get(i)->init();
+                    core1.get(i)->getExecutor()->tick();
                 }
             } 
         }, // Task function.

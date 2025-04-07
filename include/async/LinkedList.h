@@ -79,17 +79,15 @@ public:
      * @brief Removes the first occurrence of an element from the list.
      * @param data The data to be removed.
      */
-    void remove(T data) {
-        if (head == nullptr) {
-            return;
-        }
+    T remove(T data) {
+        if (head == nullptr) return NULL;
 
-        // If the element to be removed is the head
         if (head->data == data) {
+            T removedData = head->data;
             Node<T>* temp = head;
             head = head->next;
             delete temp;
-            return;
+            return removedData;
         }
 
         Node<T>* current = head;
@@ -97,13 +95,13 @@ public:
             current = current->next;
         }
 
-        if (current->next == nullptr) {
-            return;  // Element not found
-        }
+        if (current->next == nullptr) return NULL;
 
         Node<T>* temp = current->next;
+        T removedData = temp->data;
         current->next = current->next->next;
         delete temp;
+        return removedData;
     }
 
     /**

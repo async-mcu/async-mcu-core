@@ -1,291 +1,398 @@
 #pragma once
 #include <async/Log.h>
 #include <async/Duration.h>
+#include <async/Tick.h>
 #include <async/Function.h>
 #include <async/LinkedList.h>
+#include <Arduino.h>
 
 namespace async {
 
-// Базовый шаблон для не-void типов
-template<typename T>
-class Chain : public Tick {
-    typedef Function<T(T)> thenCallbackType;
-    typedef Function<T(int, T)> animationCallbackType;
+
+typedef Function<void()> VoidCallback;
+
+class Semaphore {
+    private:
+        int count;
+        const int maxCount;
+        bool locked = false;
     
-private:
-    T value;
-    int animateValue;
-    enum class ChainState { IDLE, DELAYING, ANIMATING };
+    public:
+        Semaphore(int initialCount, int maximumCount)
+            : count(initialCount), maxCount(maximumCount) {}
     
-    struct ChainOperation {
-        thenCallbackType thenCallback;
-        Duration duration;
-        int from;
-        int to;
-        bool isAnimation;
-        animationCallbackType animationCallback;
-
-        ChainOperation(thenCallbackType cb, Duration d, int f, int t, bool anim, animationCallbackType animCb)
-            : thenCallback(cb), duration(d), from(f), to(t), isAnimation(anim), animationCallback(animCb) {}
-    };
-
-    ChainState currentState = ChainState::IDLE;
-    unsigned long operationStartTime = 0;
-    LinkedList<ChainOperation*> operations;
-    int currentOperationIndex = 0;
-    bool shouldLoop = false;
-    bool isCancelled = false;
-
-public:
-    Chain(T initialValue) : value(initialValue) {}
-    
-    ~Chain() {
-        for (int i = 0; i < operations.size(); i++) {
-            delete operations.get(i);
-        }
-    }
-
-    Chain* delay(Duration duration) {
-        auto op = new ChainOperation(
-            [](T v) { return v; }, 
-            duration, 
-            0, 0, false, 
-            [](int, T v) { return v; }
-        );
-        operations.append(op);
-        return this;
-    }
-
-    Chain* then(thenCallbackType cb) {
-        auto op = new ChainOperation(
-            cb, 
-            Duration::zero(), 
-            0, 0, false, 
-            [](int, T v) { return v; }
-        );
-        operations.append(op);
-        return this;
-    }
-
-    Chain* animate(int from, int to, Duration duration, animationCallbackType stepCb) {
-        auto op = new ChainOperation(
-            [](T v) { return v; }, 
-            duration, 
-            from, to, true, 
-            stepCb
-        );
-        operations.append(op);
-        return this;
-    }
-
-    Chain* loop() {
-        shouldLoop = true;
-        return this;
-    }
-
-    bool cancel() override {
-        isCancelled = true;
-        return true;
-    }
-
-    bool tick() override {
-        if (isCancelled) return false;
-        if (currentOperationIndex >= operations.size()) {
-            if (shouldLoop) {
-                currentOperationIndex = 0;
+        bool acquire() {
+            if (count > 0 && !locked) {
+                count--;
+                locked = true;
                 return true;
             }
             return false;
         }
-
-        auto op = operations.get(currentOperationIndex);
-        switch (currentState) {
-            case ChainState::IDLE: startOperation(op); break;
-            case ChainState::DELAYING: handleDelay(op); break;
-            case ChainState::ANIMATING: handleAnimation(op); break;
-        }
-        return true;
-    }
-
-private:
-    void startOperation(ChainOperation* op) {
-        operationStartTime = millis();
-        if (op->isAnimation) {
-            currentState = ChainState::ANIMATING;
-            animateValue = op->from;
-        } else if (op->duration.get() > 0) {
-            currentState = ChainState::DELAYING;
-        } else {
-            value = op->thenCallback(value);
-            moveToNextOperation();
-        }
-    }
-
-    void handleDelay(ChainOperation* op) {
-        if (millis() - operationStartTime >= op->duration.get()) {
-            value = op->thenCallback(value);
-            moveToNextOperation();
-        }
-    }
-
-    void handleAnimation(ChainOperation* op) {
-        unsigned long elapsed = millis() - operationStartTime;
-        if (elapsed >= op->duration.get()) {
-            animateValue = op->to;
-            value = op->animationCallback(animateValue, value);
-            moveToNextOperation();
-        } else {
-            float progress = (float)elapsed / op->duration.get();
-            animateValue = op->from + (op->to - op->from) * progress;
-            value = op->animationCallback(animateValue, value);
-        }
-    }
-
-    void moveToNextOperation() {
-        currentOperationIndex++;
-        currentState = ChainState::IDLE;
-    }
-};
-
-// Специализация для void
-template<>
-class Chain<void> : public Tick {
-    typedef Function<void()> thenCallbackType;
-    typedef Function<void(int)> animationCallbackType;
     
-private:
-    int animateValue;
-    enum class ChainState { IDLE, DELAYING, ANIMATING };
+        void release() {
+            locked = false;
+            if (count < maxCount) {
+                count++;
+            }
+        }
     
-    struct ChainOperation {
-        thenCallbackType thenCallback;
-        Duration duration;
-        int from;
-        int to;
-        bool isAnimation;
-        animationCallbackType animationCallback;
-
-        ChainOperation(thenCallbackType cb, Duration d, int f, int t, bool anim, animationCallbackType animCb)
-            : thenCallback(cb), duration(d), from(f), to(t), isAnimation(anim), animationCallback(animCb) {}
+        int available() const { return count; }
     };
 
-    ChainState currentState = ChainState::IDLE;
-    unsigned long operationStartTime = 0;
-    LinkedList<ChainOperation*> operations;
-    int currentOperationIndex = 0;
-    bool shouldLoop = false;
-    bool isCancelled = false;
-
-public:
-    Chain() = default;
     
-    ~Chain() {
-        for (int i = 0; i < operations.size(); i++) {
-            delete operations.get(i);
-        }
-    }
-
-    Chain* delay(Duration duration) {
-        auto op = new ChainOperation(
-            [](){}, 
-            duration, 
-            0, 0, false, 
-            [](int){}
-        );
-        operations.append(op);
-        return this;
-    }
-
-    Chain* then(thenCallbackType cb) {
-        auto op = new ChainOperation(
-            cb, 
-            Duration::zero(), 
-            0, 0, false, 
-            [](int){}
-        );
-        operations.append(op);
-        return this;
-    }
-
-    Chain* animate(int from, int to, Duration duration, animationCallbackType stepCb) {
-        auto op = new ChainOperation(
-            [](){}, 
-            duration, 
-            from, to, true, 
-            stepCb
-        );
-        operations.append(op);
-        return this;
-    }
-
-    Chain* loop() {
-        shouldLoop = true;
-        return this;
-    }
-
-    bool cancel() override {
-        isCancelled = true;
-        return true;
-    }
-
-    bool tick() override {
-        if (isCancelled) return false;
-        if (currentOperationIndex >= operations.size()) {
-            if (shouldLoop) {
-                currentOperationIndex = 0;
-                return true;
+    template<typename T = void>
+    class Chain;
+    
+    // Специализация для void
+    template<>
+    class Chain<void> : public Tick {
+        private:
+            enum class OpType { DELAY, THEN, SEMAPHORE, INTERR, LOOP };
+            
+            struct Operation {
+                OpType type;
+                unsigned long delay;
+                VoidCallback callback;
+                Semaphore* semaphore;
+                uint8_t pin;
+                int mode;
+                unsigned long timeout;
+            };
+        
+            Operation* operations;
+            int operationCount;
+            int operationCapacity;
+            int currentOpIndex;
+            unsigned long delayStart;
+            volatile bool interruptTriggered;
+            uint8_t currentInterruptPin;
+            bool shouldLoop = false;
+        
+            static void interruptHandler(void* arg) {
+                Chain* self = static_cast<Chain*>(arg);
+                if (self) {
+                    self->interruptTriggered = true;
+                }
             }
+        
+            void addOperation(const Operation& op) {
+                if (operationCount >= operationCapacity) {
+                    int newCapacity = operationCapacity ? operationCapacity * 2 : 4;
+                    Operation* newOps = new Operation[newCapacity];
+                    for (int i = 0; i < operationCount; i++) {
+                        newOps[i] = operations[i];
+                    }
+                    delete[] operations;
+                    operations = newOps;
+                    operationCapacity = newCapacity;
+                }
+                operations[operationCount++] = op;
+            }
+        
+            void cleanupInterrupt() {
+                if (currentInterruptPin != 255) {
+                    detachInterrupt(digitalPinToInterrupt(currentInterruptPin));
+                    currentInterruptPin = 255;
+                }
+            }
+        
+            void resetChain() {
+                currentOpIndex = 0;
+                delayStart = 0;
+                interruptTriggered = false;
+                cleanupInterrupt();
+            }
+        
+        public:
+            Chain() : operations(nullptr), operationCount(0), operationCapacity(0),
+                      currentOpIndex(0), delayStart(0), interruptTriggered(false),
+                      currentInterruptPin(255) {}
+        
+            ~Chain() {
+                cleanupInterrupt();
+                delete[] operations;
+            }
+        
+            Chain* delay(unsigned long ms) {
+                Operation op;
+                op.type = OpType::DELAY;
+                op.delay = ms;
+                addOperation(op);
+                return this;
+            }
+        
+            Chain* then(VoidCallback callback) {
+                Operation op;
+                op.type = OpType::THEN;
+                op.callback = callback;
+                addOperation(op);
+                return this;
+            }
+        
+            Chain* semaphore(Semaphore* sem) {
+                Operation op;
+                op.type = OpType::SEMAPHORE;
+                op.semaphore = sem;
+                addOperation(op);
+                return this;
+            }
+        
+            Chain* interrupt(uint8_t pin, int mode, unsigned long timeout = 0xFFFFFFFF) {
+                Operation op;
+                op.type = OpType::INTERR;
+                op.pin = pin;
+                op.mode = mode;
+                op.timeout = timeout;
+                addOperation(op);
+                return this;
+            }
+        
+            Chain* loop() {
+                shouldLoop = true;
+                return this;
+            }
+        
+            bool tick() {
+                if (currentOpIndex >= operationCount) {
+                    if (shouldLoop) {
+                        resetChain();
+                        return true;
+                    }
+                    return false;
+                }
+        
+                Operation& op = operations[currentOpIndex];
+                
+                switch (op.type) {
+                    case OpType::SEMAPHORE:
+                        if (!op.semaphore->acquire()) {
+                            return true; // Продолжаем ждать
+                        }
+                        currentOpIndex++;
+                        delayStart = millis();
+                        return true;
+                        
+                    case OpType::DELAY:
+                        if (millis() - delayStart < op.delay) {
+                            return true;
+                        }
+                        delayStart = millis();
+                        currentOpIndex++;
+                        return true;
+                        
+                    case OpType::THEN:
+                        op.callback();
+                        currentOpIndex++;
+                        return true;
+                        
+                    case OpType::INTERR:
+                        if (currentInterruptPin == 255) {
+                            currentInterruptPin = op.pin;
+                            interruptTriggered = false;
+                            attachInterruptArg(
+                                digitalPinToInterrupt(op.pin),
+                                interruptHandler,
+                                this,
+                                op.mode
+                            );
+                            delayStart = millis();
+                        }
+                        
+                        if (interruptTriggered) {
+                            cleanupInterrupt();
+                            currentOpIndex++;
+                            return true;
+                        }
+                        
+                        if (millis() - delayStart >= op.timeout) {
+                            cleanupInterrupt();
+                            currentOpIndex++;
+                            return true;
+                        }
+                        return true;
+                }
+        
+                return false;
+            }
+        };
+
+    
+    // Шаблонная версия для типизированных цепочек
+    template<typename T>
+    class Chain : public Tick {
+        typedef Function<T(T)> TypedCallback;
+
+        private:
+        enum class OpType { DELAY, THEN, SEMAPHORE, INTERR, LOOP };
+        
+        struct Operation {
+            OpType type;
+            unsigned long delay;
+            TypedCallback callback;
+            Semaphore* semaphore;
+            uint8_t pin;
+            int mode;
+            unsigned long timeout;
+        };
+    
+        Operation* operations;
+        int operationCount;
+        int operationCapacity;
+        int currentOpIndex;
+        unsigned long delayStart;
+        volatile bool interruptTriggered;
+        uint8_t currentInterruptPin;
+        bool shouldLoop = false;
+        T value;
+    
+        static void interruptHandler(void* arg) {
+            Chain* self = static_cast<Chain*>(arg);
+            if (self) {
+                self->interruptTriggered = true;
+            }
+        }
+    
+        void addOperation(const Operation& op) {
+            if (operationCount >= operationCapacity) {
+                int newCapacity = operationCapacity ? operationCapacity * 2 : 4;
+                Operation* newOps = new Operation[newCapacity];
+                for (int i = 0; i < operationCount; i++) {
+                    newOps[i] = operations[i];
+                }
+                delete[] operations;
+                operations = newOps;
+                operationCapacity = newCapacity;
+            }
+            operations[operationCount++] = op;
+        }
+    
+        void cleanupInterrupt() {
+            if (currentInterruptPin != 255) {
+                detachInterrupt(digitalPinToInterrupt(currentInterruptPin));
+                currentInterruptPin = 255;
+            }
+        }
+    
+        void resetChain() {
+            currentOpIndex = 0;
+            delayStart = 0;
+            interruptTriggered = false;
+            cleanupInterrupt();
+        }
+    
+    public:
+        Chain(T value) : operations(nullptr), operationCount(0), operationCapacity(0),
+                  currentOpIndex(0), delayStart(0), interruptTriggered(false),
+                  currentInterruptPin(255), value(value) {}
+    
+        ~Chain() {
+            cleanupInterrupt();
+            delete[] operations;
+        }
+    
+        Chain* delay(unsigned long ms) {
+            Operation op;
+            op.type = OpType::DELAY;
+            op.delay = ms;
+            addOperation(op);
+            return this;
+        }
+    
+        Chain* then(TypedCallback callback) {
+            Operation op;
+            op.type = OpType::THEN;
+            op.callback = callback;
+            addOperation(op);
+            return this;
+        }
+    
+        Chain* semaphore(Semaphore* sem) {
+            Operation op;
+            op.type = OpType::SEMAPHORE;
+            op.semaphore = sem;
+            addOperation(op);
+            return this;
+        }
+    
+        Chain* interrupt(uint8_t pin, int mode, unsigned long timeout = 0xFFFFFFFF) {
+            Operation op;
+            op.type = OpType::INTERR;
+            op.pin = pin;
+            op.mode = mode;
+            op.timeout = timeout;
+            addOperation(op);
+            return this;
+        }
+    
+        Chain* loop() {
+            shouldLoop = true;
+            return this;
+        }
+    
+        bool tick() {
+            if (currentOpIndex >= operationCount) {
+                if (shouldLoop) {
+                    resetChain();
+                    return true;
+                }
+                return false;
+            }
+    
+            Operation& op = operations[currentOpIndex];
+            
+            switch (op.type) {
+                case OpType::SEMAPHORE:
+                    if (!op.semaphore->acquire()) {
+                        return true; // Продолжаем ждать
+                    }
+                    currentOpIndex++;
+                    return true;
+                    
+                case OpType::DELAY:
+                    if (millis() - delayStart < op.delay) {
+                        return true;
+                    }
+                    delayStart = millis();
+                    currentOpIndex++;
+                    return true;
+                    
+                case OpType::THEN:
+                    value = op.callback(value);
+                    currentOpIndex++;
+                    return true;
+                    
+                case OpType::INTERR:
+                    if (currentInterruptPin == 255) {
+                        currentInterruptPin = op.pin;
+                        interruptTriggered = false;
+                        attachInterruptArg(
+                            digitalPinToInterrupt(op.pin),
+                            interruptHandler,
+                            this,
+                            op.mode
+                        );
+                        delayStart = millis();
+                    }
+                    
+                    if (interruptTriggered) {
+                        cleanupInterrupt();
+                        currentOpIndex++;
+                        return true;
+                    }
+                    
+                    if (millis() - delayStart >= op.timeout) {
+                        cleanupInterrupt();
+                        currentOpIndex++;
+                        return true;
+                    }
+                    return true;
+            }
+    
             return false;
         }
+    };
 
-        auto op = operations.get(currentOperationIndex);
-        switch (currentState) {
-            case ChainState::IDLE: startOperation(op); break;
-            case ChainState::DELAYING: handleDelay(op); break;
-            case ChainState::ANIMATING: handleAnimation(op); break;
-        }
-        return true;
-    }
-
-private:
-    void startOperation(ChainOperation* op) {
-        operationStartTime = millis();
-        if (op->isAnimation) {
-            currentState = ChainState::ANIMATING;
-            animateValue = op->from;
-        } else if (op->duration.get() > 0) {
-            currentState = ChainState::DELAYING;
-        } else {
-            op->thenCallback();
-            moveToNextOperation();
-        }
-    }
-
-    void handleDelay(ChainOperation* op) {
-        if (millis() - operationStartTime >= op->duration.get()) {
-            op->thenCallback();
-            moveToNextOperation();
-        }
-    }
-
-    void handleAnimation(ChainOperation* op) {
-        unsigned long elapsed = millis() - operationStartTime;
-        if (elapsed >= op->duration.get()) {
-            animateValue = op->to;
-            op->animationCallback(animateValue);
-            moveToNextOperation();
-        } else {
-            float progress = (float)elapsed / op->duration.get();
-            animateValue = op->from + (op->to - op->from) * progress;
-            op->animationCallback(animateValue);
-        }
-    }
-
-    void moveToNextOperation() {
-        currentOperationIndex++;
-        currentState = ChainState::IDLE;
-    }
-};
 
 // Функции создания
 inline Chain<void>* chain() {

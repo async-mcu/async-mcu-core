@@ -141,6 +141,10 @@ namespace async {
                 return Duration(millis64());
             };
 
+            static Duration maximum() {
+                return Duration((uint64_t)-1);
+            };
+
             /**
              * @brief Get a zero-length Duration
              * @return Duration* New Duration object representing zero time

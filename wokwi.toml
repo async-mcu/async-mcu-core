@@ -1,5 +1,5 @@
 [wokwi]
 version=1
-firmware='.pio/build/uno/firmware.hex'
-elf='.pio/build/uno/firmware.elf'
+firmware='.pio/build/esp32/firmware.bin'
+elf='.pio/build/esp32/firmware.elf'
 #gdbServerPort=3333

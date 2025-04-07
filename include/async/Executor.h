@@ -45,6 +45,7 @@ namespace async {
             void remove(Tick * tick) {
                 list.remove(tick);
                 tick->cancel();
+                delete tick;
             }
 
             /**
