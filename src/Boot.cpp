@@ -11,18 +11,6 @@ Boot::Boot(initCallback initCallback) {
     this->executor = new Executor();
 }
 
-Boot::Boot(byte core, initCallback initCallback) {
-    if(core == 0) {
-        core0.append(this);
-    }
-    else {
-        core1.append(this);
-    }
-    
-    this->callback = initCallback;
-    this->executor = new Executor();
-}
-
 LinkedList<Boot *> & Boot::getBoots(int core) {
     if(core == 0) {
         return core0;
@@ -34,6 +22,18 @@ LinkedList<Boot *> & Boot::getBoots(int core) {
 
 
 #ifdef ARDUINO_ARCH_ESP32
+
+Boot::Boot(byte core, initCallback initCallback) {
+    if(core == 0) {
+        core0.append(this);
+    }
+    else {
+        core1.append(this);
+    }
+    
+    this->callback = initCallback;
+    this->executor = new Executor();
+}
 
 TaskHandle_t taskLoopCore0;
 TaskHandle_t taskLoopCore1;

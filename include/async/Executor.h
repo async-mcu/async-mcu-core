@@ -148,12 +148,11 @@ namespace async {
              * 
              * @warning Currently implemented as DEMAND task (needs proper interrupt handling)
              */
-            Task * onInterrupt(uint8_t pin, int mode, voidCallback cb) {
-                auto task = new Task(Task::DEMAND, cb);
-                this->add(task);
-                attachInterruptArg(pin, task->isr, task, mode);
-                return task;
-            }
+            // Task * onInterrupt(uint8_t pin, int mode, voidCallback cb) {
+            //     auto task = new Task(pin, mode, cb);
+            //     this->add(task);
+            //     return task;
+            // }
             ///@}
     };
 }

@@ -3,6 +3,8 @@
 #include <async/Time.h>
 #include <async/Duration.h>
 #include <async/Function.h>
+#include <async/LinkedList.h>
+
 
 /**
  * @class Task
@@ -18,7 +20,8 @@ namespace async {
     class Task : public Tick {
         private:
             int type;           ///< Task type (REPEAT, DELAY, etc.)
-            int state;          ///< Current state (PAUSE, RUN, CANCEL)
+            volatile int state;          ///< Current state (PAUSE, RUN, CANCEL)
+            int pin;
             Duration * duration;///< Duration for timed tasks
             Duration * from;    ///< Timestamp when task started or was last reset
             voidCallback callback; ///< Callback function to execute
@@ -31,6 +34,7 @@ namespace async {
             static int const DELAY_REPEAT = 2;///< Delayed repeating task type (unused)
             static int const TICK = 3;        ///< Execute every tick task type
             static int const DEMAND = 4;      ///< Demand-based task type
+            static int const INTERR = 4;      ///< Demand-based task type
             ///@}
 
             ///@name Task State Constants
@@ -38,6 +42,7 @@ namespace async {
             static int const PAUSE = 0;  ///< Task is paused
             static int const RUN = 1;    ///< Task is running
             static int const CANCEL = 2; ///< Task is canceled
+            //static LinkedList<async::Task*> handlers[];
             ///@}
 
             /**
@@ -45,20 +50,60 @@ namespace async {
              */
             ~Task() {
                 Serial.println("~Task");
-                //delete duration;
-                delete from;
+                //detachInterrupt(digitalPinToInterrupt(pin));
+                int val = digitalPinToInterrupt(pin);
+                //handlers[val].remove(this);
+
+                // if(from != nullptr) {
+                //     delete from;
+                // }
             }
 
             /**
              * @brief Construct a demand-based Task
-             * @param type Must be DEMAND
+             * @param type Must be DEMAND or TICK
              * @param callback Function to execute when demanded
              */
             Task(const int type, voidCallback callback) {
-                this->type = DEMAND;
+                this->type = type;
                 this->state = PAUSE;
                 this->callback = callback;
             }
+
+            /**
+             * @brief Construct a interrupt Task
+             * @param type Must be DEMAND
+             * @param callback Function to execute when demanded
+             */
+            // Task(const int pin, const int mode, voidCallback callback) {
+            //     this->type = DEMAND;
+            //     this->state = PAUSE;
+            //     this->callback = callback;
+            //     this->pin = pin;
+
+            //     if(mode == RISING) {
+            //         pinMode(pin, INPUT);
+            //     }
+            //     else if(mode == FALLING) {
+            //         pinMode(pin, INPUT_PULLUP);
+            //     }
+
+            //     int val = digitalPinToInterrupt(pin);
+
+            //     #ifndef ARDUINO_ARCH_ESP32
+            //         Serial.println(val);
+
+            //         if(handlers[val].size() == 0) {
+            //             Serial.println("attachInterrupt");
+            //             attachInterrupt(val, val == 23 ? ISR0 : ISR1, mode);
+            //         }
+
+            //         handlers[val].append(this);
+            //     #else
+            //         Serial.println(val);
+            //         attachInterruptArg(val, ISR, &val, mode);
+            //     #endif
+            // }
 
             /**
              * @brief Construct a timed Task
@@ -120,6 +165,7 @@ namespace async {
              * @return Always returns true
              */
             bool demand() {
+                //Serial.println("demand");
                 this->state = RUN;
                 return true;
             }
@@ -171,11 +217,6 @@ namespace async {
                 }
 
                 return true;
-            }
-
-            IRAM_ATTR static void isr(void* arg) {
-                Task *ptr = (Task*) arg;
-                ptr->demand();
             }
     };
 }

@@ -1,10 +1,14 @@
 #pragma once
-#include <async/Log.h>
-#include <async/Duration.h>
+#include <Arduino.h>
 #include <async/Tick.h>
+#include <async/Task.h>
+#include <async/Executor.h>
 #include <async/Function.h>
 #include <async/LinkedList.h>
-#include <Arduino.h>
+#include <async/Interrupt.h>
+
+//template void attachInterruptArg<void*>(uint8_t&, void (&)(void*), async::Chain<void>*, int&);
+//template void attachInterruptArg<int>(uint8_t, void (*)(int), int, int);
 
 namespace async {
 
@@ -48,51 +52,33 @@ class Semaphore {
     template<>
     class Chain<void> : public Tick {
         private:
-            enum class OpType { DELAY, THEN, SEMAPHORE, INTERR, LOOP };
+            enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP };
             
             struct Operation {
                 OpType type;
                 unsigned long delay;
                 VoidCallback callback;
                 Semaphore* semaphore;
-                uint8_t pin;
-                int mode;
                 unsigned long timeout;
+                int pin;
+                Task * task;
             };
         
-            Operation* operations;
-            int operationCount;
-            int operationCapacity;
-            int currentOpIndex;
+            LinkedList<Operation> operations;
+            uint8_t operationCount;
+            uint8_t currentOpIndex;
             unsigned long delayStart;
             volatile bool interruptTriggered;
             uint8_t currentInterruptPin;
             bool shouldLoop = false;
         
-            static void interruptHandler(void* arg) {
-                Chain* self = static_cast<Chain*>(arg);
-                if (self) {
-                    self->interruptTriggered = true;
-                }
-            }
-        
-            void addOperation(const Operation& op) {
-                if (operationCount >= operationCapacity) {
-                    int newCapacity = operationCapacity ? operationCapacity * 2 : 4;
-                    Operation* newOps = new Operation[newCapacity];
-                    for (int i = 0; i < operationCount; i++) {
-                        newOps[i] = operations[i];
-                    }
-                    delete[] operations;
-                    operations = newOps;
-                    operationCapacity = newCapacity;
-                }
-                operations[operationCount++] = op;
+            void addOperation(Operation op) {
+                operations.append(op);
+                operationCount++;
             }
         
             void cleanupInterrupt() {
                 if (currentInterruptPin != 255) {
-                    detachInterrupt(digitalPinToInterrupt(currentInterruptPin));
                     currentInterruptPin = 255;
                 }
             }
@@ -105,13 +91,12 @@ class Semaphore {
             }
         
         public:
-            Chain() : operations(nullptr), operationCount(0), operationCapacity(0),
+            Chain() : operationCount(0), 
                       currentOpIndex(0), delayStart(0), interruptTriggered(false),
                       currentInterruptPin(255) {}
         
             ~Chain() {
                 cleanupInterrupt();
-                delete[] operations;
             }
         
             Chain* delay(unsigned long ms) {
@@ -130,20 +115,34 @@ class Semaphore {
                 return this;
             }
         
-            Chain* semaphore(Semaphore* sem) {
+            Chain* semaphoreWait(Semaphore* sem) {
                 Operation op;
-                op.type = OpType::SEMAPHORE;
+                op.type = OpType::SEMAPHORE_WAIT;
+                op.semaphore = sem;
+                addOperation(op);
+                return this;
+            }
+
+            Chain* semaphoreSkip(Semaphore* sem) {
+                Operation op;
+                op.type = OpType::SEMAPHORE_SKIP;
                 op.semaphore = sem;
                 addOperation(op);
                 return this;
             }
         
-            Chain* interrupt(uint8_t pin, int mode, unsigned long timeout = 0xFFFFFFFF) {
+            Chain* interrupt(Interrupt * interrupt, unsigned long timeout = 0xFFFFFFFF) {
                 Operation op;
                 op.type = OpType::INTERR;
-                op.pin = pin;
-                op.mode = mode;
                 op.timeout = timeout;
+                op.pin = interrupt->getPin();
+
+                op.task = interrupt->onInterrupt([interrupt, this]() {
+                    if(interrupt->getPin() == this->currentInterruptPin) {
+                        this->interruptTriggered = true;
+                    }
+                });
+
                 addOperation(op);
                 return this;
             }
@@ -154,23 +153,38 @@ class Semaphore {
             }
         
             bool tick() {
-                if (currentOpIndex >= operationCount) {
+                if (currentOpIndex >= operations.size()) {
                     if (shouldLoop) {
                         resetChain();
                         return true;
                     }
                     return false;
                 }
-        
-                Operation& op = operations[currentOpIndex];
+                
+                Operation op = operations.get(currentOpIndex); //[currentOpIndex];
+
+                if(op.type == OpType::INTERR) {
+                    op.task->tick();
+                }
                 
                 switch (op.type) {
-                    case OpType::SEMAPHORE:
+                    case OpType::SEMAPHORE_WAIT:
                         if (!op.semaphore->acquire()) {
                             return true; // Продолжаем ждать
                         }
                         currentOpIndex++;
                         delayStart = millis();
+                        return true;
+
+                    case OpType::SEMAPHORE_SKIP:
+                        if (!op.semaphore->acquire()) {
+                            currentOpIndex = operations.size();
+                            return true; // завершаем программу
+                        }
+                        
+                        currentOpIndex++;
+                        delayStart = millis();
+
                         return true;
                         
                     case OpType::DELAY:
@@ -190,12 +204,7 @@ class Semaphore {
                         if (currentInterruptPin == 255) {
                             currentInterruptPin = op.pin;
                             interruptTriggered = false;
-                            attachInterruptArg(
-                                digitalPinToInterrupt(op.pin),
-                                interruptHandler,
-                                this,
-                                op.mode
-                            );
+
                             delayStart = millis();
                         }
                         
@@ -206,6 +215,7 @@ class Semaphore {
                         }
                         
                         if (millis() - delayStart >= op.timeout) {
+                            Serial.println("cleanupInterrupt");
                             cleanupInterrupt();
                             currentOpIndex++;
                             return true;
@@ -224,7 +234,7 @@ class Semaphore {
         typedef Function<T(T)> TypedCallback;
 
         private:
-        enum class OpType { DELAY, THEN, SEMAPHORE, INTERR, LOOP };
+        enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP };
         
         struct Operation {
             OpType type;
@@ -232,11 +242,10 @@ class Semaphore {
             TypedCallback callback;
             Semaphore* semaphore;
             uint8_t pin;
-            int mode;
             unsigned long timeout;
+            Task * task;
         };
     
-        Operation* operations;
         int operationCount;
         int operationCapacity;
         int currentOpIndex;
@@ -245,50 +254,32 @@ class Semaphore {
         uint8_t currentInterruptPin;
         bool shouldLoop = false;
         T value;
+        LinkedList<Task *> tasks;
+        LinkedList<Operation> operations;
     
-        static void interruptHandler(void* arg) {
-            Chain* self = static_cast<Chain*>(arg);
-            if (self) {
-                self->interruptTriggered = true;
-            }
-        }
-    
-        void addOperation(const Operation& op) {
-            if (operationCount >= operationCapacity) {
-                int newCapacity = operationCapacity ? operationCapacity * 2 : 4;
-                Operation* newOps = new Operation[newCapacity];
-                for (int i = 0; i < operationCount; i++) {
-                    newOps[i] = operations[i];
-                }
-                delete[] operations;
-                operations = newOps;
-                operationCapacity = newCapacity;
-            }
-            operations[operationCount++] = op;
-        }
-    
-        void cleanupInterrupt() {
-            if (currentInterruptPin != 255) {
-                detachInterrupt(digitalPinToInterrupt(currentInterruptPin));
-                currentInterruptPin = 255;
-            }
+        void addOperation(Operation op) {
+            operations.append(op);
+            operationCount++;
         }
     
         void resetChain() {
             currentOpIndex = 0;
             delayStart = 0;
             interruptTriggered = false;
-            cleanupInterrupt();
         }
-    
+        
+        void cleanupInterrupt() {
+            if (currentInterruptPin != 255) {
+                currentInterruptPin = 255;
+            }
+        }
     public:
-        Chain(T value) : operations(nullptr), operationCount(0), operationCapacity(0),
+        Chain(T value) : operationCount(0), operationCapacity(0),
                   currentOpIndex(0), delayStart(0), interruptTriggered(false),
                   currentInterruptPin(255), value(value) {}
     
         ~Chain() {
             cleanupInterrupt();
-            delete[] operations;
         }
     
         Chain* delay(unsigned long ms) {
@@ -307,20 +298,32 @@ class Semaphore {
             return this;
         }
     
-        Chain* semaphore(Semaphore* sem) {
+        Chain* semaphoreWait(Semaphore* sem) {
             Operation op;
-            op.type = OpType::SEMAPHORE;
+            op.type = OpType::SEMAPHORE_WAIT;
+            op.semaphore = sem;
+            addOperation(op);
+            return this;
+        }
+
+        Chain* semaphoreSkip(Semaphore* sem) {
+            Operation op;
+            op.type = OpType::SEMAPHORE_SKIP;
             op.semaphore = sem;
             addOperation(op);
             return this;
         }
     
-        Chain* interrupt(uint8_t pin, int mode, unsigned long timeout = 0xFFFFFFFF) {
+        Chain* interrupt(Interrupt * interrupt, unsigned long timeout = 0xFFFFFFFF) {
             Operation op;
             op.type = OpType::INTERR;
-            op.pin = pin;
-            op.mode = mode;
             op.timeout = timeout;
+            op.pin = interrupt->getPin();
+            op.task = interrupt->onInterrupt([interrupt, this]() {;
+                if(interrupt->getPin() == this->currentInterruptPin) {
+                    this->interruptTriggered = true;
+                }
+            });
             addOperation(op);
             return this;
         }
@@ -339,14 +342,30 @@ class Semaphore {
                 return false;
             }
     
-            Operation& op = operations[currentOpIndex];
+            Operation op = operations.get(currentOpIndex); //[currentOpIndex];
+
+            if(op.type == OpType::INTERR) {
+                op.task->tick();
+            }
             
             switch (op.type) {
-                case OpType::SEMAPHORE:
+                case OpType::SEMAPHORE_WAIT:
                     if (!op.semaphore->acquire()) {
                         return true; // Продолжаем ждать
                     }
                     currentOpIndex++;
+                    delayStart = millis();
+                    return true;
+
+                case OpType::SEMAPHORE_SKIP:
+                    if (!op.semaphore->acquire()) {
+                        currentOpIndex = operations.size();
+                        return true; // завершаем программу
+                    }
+                    
+                    currentOpIndex++;
+                    delayStart = millis();
+
                     return true;
                     
                 case OpType::DELAY:
@@ -366,12 +385,7 @@ class Semaphore {
                     if (currentInterruptPin == 255) {
                         currentInterruptPin = op.pin;
                         interruptTriggered = false;
-                        attachInterruptArg(
-                            digitalPinToInterrupt(op.pin),
-                            interruptHandler,
-                            this,
-                            op.mode
-                        );
+
                         delayStart = millis();
                     }
                     

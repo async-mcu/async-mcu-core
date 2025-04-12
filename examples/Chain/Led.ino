@@ -13,11 +13,11 @@ Boot boot([](Executor * executor) {
       ->then([]() {
         digitalWrite(LED_BUILTIN, HIGH);
       })
-      ->delay(Duration(1000))
+      ->delay(1000)
       ->then([]() {
         digitalWrite(LED_BUILTIN, LOW);
       })
-      ->delay(Duration(1000))
+      ->delay(1000)
       ->loop();
 
   executor->add(ch);
