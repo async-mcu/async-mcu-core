@@ -5,7 +5,7 @@ using namespace async;
 LinkedList<Boot *> core0; ///< Array of boot instances for each core
 LinkedList<Boot *> core1; ///< Array of boot instances for each core
 
-Boot::Boot(initCallback initCallback) {
+Boot::Boot(InitCallback initCallback) {
     core0.append(this);
     this->callback = initCallback;
     this->executor = new Executor();
@@ -23,7 +23,7 @@ LinkedList<Boot *> & Boot::getBoots(int core) {
 
 #ifdef ARDUINO_ARCH_ESP32
 
-Boot::Boot(byte core, initCallback initCallback) {
+Boot::Boot(byte core, InitCallback initCallback) {
     if(core == 0) {
         core0.append(this);
     }
@@ -39,43 +39,43 @@ TaskHandle_t taskLoopCore0;
 TaskHandle_t taskLoopCore1;
 
 void setup() {
-    xTaskCreatePinnedToCore([] (void * param) 
-        { 
+    xTaskCreatePinnedToCore([] (void * param) { 
+        for(int i=0, size = core0.size(); i < size; i++) {
+            core0.get(i)->init();
+        }
+
+        while (true) {
             for(int i=0, size = core0.size(); i < size; i++) {
-                core0.get(i)->init();
+                core0.get(i)->getExecutor()->tick();
             }
+            vTaskDelay(1);
+        } 
+    }, // Task function.
+    "",     // name of task. //
+    10000,       // Stack size of task //
+    NULL,        // parameter of the task //
+    1,           // priority of the task //
+    &taskLoopCore0,      // Task handle to keep track of created task //
+    0);          // pin task to core 0 // 
 
-            while (true) {
-                for(int i=0, size = core0.size(); i < size; i++) {
-                    core0.get(i)->getExecutor()->tick();
-                }
-            } 
-        }, // Task function.
-        "",     // name of task. //
-        10000,       // Stack size of task //
-        NULL,        // parameter of the task //
-        1,           // priority of the task //
-        &taskLoopCore0,      // Task handle to keep track of created task //
-        0);          // pin task to core 0 // 
+    xTaskCreatePinnedToCore([] (void * param) { 
+        for(int i=0, size = core1.size(); i < size; i++) {
+            core1.get(i)->init();
+        }
 
-    xTaskCreatePinnedToCore([] (void * param) 
-        { 
+        while (true) {
             for(int i=0, size = core1.size(); i < size; i++) {
-                core1.get(i)->init();
+                core1.get(i)->getExecutor()->tick();
             }
-
-            while (true) {
-                for(int i=0, size = core1.size(); i < size; i++) {
-                    core1.get(i)->getExecutor()->tick();
-                }
-            } 
-        }, // Task function.
-        "",     // name of task. //
-        10000,       // Stack size of task //
-        NULL,        // parameter of the task //
-        1,           // priority of the task //
-        &taskLoopCore1,      // Task handle to keep track of created task //
-        1);          // pin task to core 1 //  
+            vTaskDelay(1);
+        } 
+    }, // Task function.
+    "",     // name of task. //
+    10000,       // Stack size of task //
+    NULL,        // parameter of the task //
+    1,           // priority of the task //
+    &taskLoopCore1,      // Task handle to keep track of created task //
+    1);          // pin task to core 1 //  
 }
 void loop() {
     vTaskDelete(NULL);

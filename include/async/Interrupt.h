@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <async/Callbacks.h>
 #include <async/Tick.h>
 #include <async/Task.h>
 #include <async/LinkedList.h>
@@ -72,7 +73,7 @@ namespace async {
             this->handlers.append(task);
         }
 
-        Task * onInterrupt(voidCallback callback) {
+        Task * onInterrupt(VoidCallback callback) {
             auto task = new Task(Task::DEMAND, callback);
             this->handlers.append(task);
             return task;

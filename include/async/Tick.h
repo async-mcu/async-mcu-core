@@ -58,6 +58,14 @@ namespace async {
         virtual bool tick() = 0;
 
         /**
+         * @brief Init method, calls after add to executor
+         * @return bool True if successful, false otherwise
+         * 
+         * @note Default implementation simply returns true
+         */
+        virtual bool init() { return true; };
+
+        /**
          * @brief Start the tickable object
          * @return bool True if successful, false otherwise
          * 

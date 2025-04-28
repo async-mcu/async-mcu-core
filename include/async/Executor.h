@@ -2,6 +2,7 @@
 #include <async/Task.h>
 #include <async/Tick.h>
 #include <async/LinkedList.h>
+#include <async/Callbacks.h>
 
 namespace async { 
     /**
@@ -18,8 +19,21 @@ namespace async {
     class Executor : public Tick {
         private:
             LinkedList<Tick*> list; ///< List of managed Tick objects
+            bool begin = false;
 
         public:
+            bool init() {
+                for(int i=0, size=list.size(); i < size; i++) {
+                    Tick * tick = list.get(i);
+
+                    if(!tick->init()) {
+                        return false;
+                    }
+                }
+
+                this->begin = true;
+                return true;
+            }
             /**
              * @brief Add a Tick object to the executor's management
              * @param tick Pointer to the Tick object to be added
@@ -29,7 +43,10 @@ namespace async {
              */
             void add(Tick * tick) {
                 list.append(tick);
-                tick->start();
+
+                if(this->begin) {
+                    tick->init();
+                }
             }
 
             // TODO
@@ -75,7 +92,7 @@ namespace async {
              * @param cb Callback function to execute
              * @return Task* Pointer to the created Task object
              */
-            Task * onTick(voidCallback cb) {
+            Task * onTick(VoidCallback cb) {
                 auto task = new Task(Task::TICK, cb);
                 this->add(task);
                 return task;
@@ -87,7 +104,7 @@ namespace async {
              * @param cb Callback function to execute
              * @return Task* Pointer to the created Task object
              */
-            Task * onRepeat(Duration * duration, voidCallback cb) {
+            Task * onRepeat(Duration * duration, VoidCallback cb) {
                 auto task = new Task(Task::REPEAT, duration, cb);
                 this->add(task);
                 return task;
@@ -99,7 +116,7 @@ namespace async {
              * @param cb Callback function to execute
              * @return Task* Pointer to the created Task object
              */
-            Task * onRepeat(uint64_t duration, voidCallback cb) {
+            Task * onRepeat(uint64_t duration, VoidCallback cb) {
                 return onRepeat(new Duration(duration), cb);
             }
 
@@ -109,7 +126,7 @@ namespace async {
              * @param cb Callback function to execute
              * @return Task* Pointer to the created Task object
              */
-            Task * onDelay(Duration * duration, voidCallback cb) {
+            Task * onDelay(Duration * duration, VoidCallback cb) {
                 auto task = new Task(Task::DELAY, duration, cb);
                 this->add(task);
                 return task;
@@ -121,7 +138,7 @@ namespace async {
              * @param cb Callback function to execute
              * @return Task* Pointer to the created Task object
              */
-            Task * onDelay(uint64_t duration, voidCallback cb) {
+            Task * onDelay(uint64_t duration, VoidCallback cb) {
                 return onDelay(new Duration(duration), cb);
             }
             
@@ -132,7 +149,7 @@ namespace async {
              * 
              * @note Demand tasks only execute when manually triggered
              */
-            Task * onDemand(voidCallback cb) {
+            Task * onDemand(VoidCallback cb) {
                 auto task = new Task(Task::DEMAND, cb);
                 this->add(task);
                 return task;

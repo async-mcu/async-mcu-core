@@ -6,15 +6,12 @@
 #include <async/Function.h>
 #include <async/LinkedList.h>
 #include <async/Interrupt.h>
+#include <async/Callbacks.h>
 
 //template void attachInterruptArg<void*>(uint8_t&, void (&)(void*), async::Chain<void>*, int&);
 //template void attachInterruptArg<int>(uint8_t, void (*)(int), int, int);
 
 namespace async {
-
-
-typedef Function<void()> VoidCallback;
-
 class Semaphore {
     private:
         int count;

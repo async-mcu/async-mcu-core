@@ -4,7 +4,7 @@
 #include <async/Duration.h>
 #include <async/Function.h>
 #include <async/LinkedList.h>
-
+#include <async/Callbacks.h>
 
 /**
  * @class Task
@@ -15,8 +15,6 @@
  * delayed, and demand-based tasks. Tasks can be paused, resumed, canceled, or reset.
  */
 namespace async { 
-    typedef Function<void()> voidCallback; ///< Callback function type for task execution
-
     class Task : public Tick {
         private:
             int type;           ///< Task type (REPEAT, DELAY, etc.)
@@ -24,7 +22,7 @@ namespace async {
             int pin;
             Duration * duration;///< Duration for timed tasks
             Duration * from;    ///< Timestamp when task started or was last reset
-            voidCallback callback; ///< Callback function to execute
+            VoidCallback callback; ///< Callback function to execute
 
         public:
             ///@name Task Type Constants
@@ -64,7 +62,7 @@ namespace async {
              * @param type Must be DEMAND or TICK
              * @param callback Function to execute when demanded
              */
-            Task(const int type, voidCallback callback) {
+            Task(const int type, VoidCallback callback) {
                 this->type = type;
                 this->state = PAUSE;
                 this->callback = callback;
@@ -111,7 +109,7 @@ namespace async {
              * @param duration Pointer to Duration object for task timing
              * @param callback Function to execute when task triggers
              */
-            Task(const int type, Duration * duration, voidCallback callback) {
+            Task(const int type, Duration * duration, VoidCallback callback) {
                 this->type = type;
                 this->duration = duration;
                 this->from = new Duration(millis64());
@@ -123,14 +121,14 @@ namespace async {
             
             /**
              * @brief Start a timed task
-             * @return true if successful, false for DEMAND tasks
+             * @return true
              */
-            bool start() {
+            bool init() {
                 if(this->type != DEMAND) {
                     this->state = RUN;
-                    return true;
                 }
-                return false;
+
+                return true;
             }
 
             /**

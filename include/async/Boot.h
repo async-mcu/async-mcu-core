@@ -1,17 +1,22 @@
 #pragma once
 #include <async/Executor.h>
 #include <async/LinkedList.h>
+#include <async/Callbacks.h>
+
+#define CORE0 0
+#define CORE1 1
 
 void setup() __attribute__ ((weak));
 void loop() __attribute__ ((weak));
+
 
 namespace async {
     /**
      * @brief Callback function type for boot initialization
      * @param executor Pointer to the Executor instance
      */
-    typedef Function<void(Executor *)> initCallback;
-
+    typedef Function<void(Executor *)> InitCallback;
+    
     /**
      * @class Boot
      * @brief Handles system boot initialization with executor setup
@@ -23,14 +28,14 @@ namespace async {
     class Boot {
         private:
             Executor * executor;   ///< Pointer to the executor instance
-            initCallback callback; ///< Initialization callback function
+            InitCallback callback; ///< Initialization callback function
 
         public:
             /**
              * @brief Construct a new Boot instance for core 0
              * @param initCallback The initialization callback function
              */
-            Boot(initCallback initCallback);
+            Boot(InitCallback initCallback);
 
             /**
              * @brief Initialize the boot process by invoking the callback
@@ -60,7 +65,7 @@ namespace async {
              * @param core Core number (CORE0 or CORE1)
              * @param cb Initialization callback function
              */
-            Boot(byte core, initCallback cb);
+            Boot(byte core, InitCallback cb);
             #endif
     };
 }

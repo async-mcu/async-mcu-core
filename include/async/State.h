@@ -12,8 +12,8 @@
 namespace async { 
     template<typename T>
     class State {
-        typedef Function<void(T, T)> onChangeAllArgsCallback;
-        typedef Function<T(T)> getAndSetAllArgsCallback;
+        typedef Function<void(T, T)> OnChangeAllArgsCallback;
+        typedef Function<T(T)> GetAndSetAllArgsCallback;
 
         private:
             volatile T value;
@@ -22,14 +22,14 @@ namespace async {
 
         public:
             State(T value) : value(value) {}
-            Task * onChange(onChangeAllArgsCallback cbCallback);
-            void getAndSet(getAndSetAllArgsCallback cbCallback);
+            Task * onChange(OnChangeAllArgsCallback cbCallback);
+            void getAndSet(GetAndSetAllArgsCallback cbCallback);
             T get();
             void set(T value, bool force = false);
     };
 
     template <typename T>
-    inline Task * State<T>::onChange(onChangeAllArgsCallback cbCallback) {
+    inline Task * State<T>::onChange(OnChangeAllArgsCallback cbCallback) {
         auto task =  new Task(Task::DEMAND, [&, cbCallback] () {
             cbCallback(value, prevValue);
         });
@@ -39,7 +39,7 @@ namespace async {
     }
 
     template <typename T>
-    inline void State<T>::getAndSet(getAndSetAllArgsCallback cbCallback) {
+    inline void State<T>::getAndSet(GetAndSetAllArgsCallback cbCallback) {
         this->set(cbCallback(this->value));
     }
 
