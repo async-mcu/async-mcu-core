@@ -14,6 +14,7 @@ namespace async {
         volatile size_t _capacity;
     
         void expand() {
+            
             _capacity = _capacity ? _capacity * 2 : 8;
             T* newBuffer = (T*)malloc(_capacity * sizeof(T));
             if (buffer) {
@@ -24,7 +25,7 @@ namespace async {
         }
     
     public:
-        FastList()  {}
+        FastList(): _size(0), _capacity(0), buffer(nullptr) {}
         ~FastList() {
             if (buffer) free((void*)buffer); 
         }
@@ -32,6 +33,14 @@ namespace async {
         // Добавление элементов (по значению)
         void append(T item) override {
             if (_size >= _capacity) expand();
+
+            // if(Serial.available()) {
+            //     Serial.print ("_capacity ");
+            //     Serial.println(_capacity);
+            //     Serial.print ("size ");
+            //     Serial.println(_size);
+            // }
+            
             buffer[_size++] = item;
         }
     

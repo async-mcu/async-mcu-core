@@ -46,8 +46,8 @@ namespace async {
              * @brief Initialize the boot process by invoking the callback
              */
             void init() {
-                this->callback(executor);
                 this->executor->start();
+                this->callback(executor);
             }
 
             /**

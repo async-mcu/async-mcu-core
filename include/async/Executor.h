@@ -25,14 +25,6 @@ namespace async {
             Executor() {}
 
             bool start() override {
-                for(int i=0, size=list.size(); i < size; i++) {
-                    Tick * tick = list.get(i);
-
-                    if(!tick->start()) {
-                        return false;
-                    }
-                }
-
                 this->begin = true;
                 return true;
             }
@@ -44,6 +36,8 @@ namespace async {
              * @note The executor takes ownership of the Tick object's lifecycle
              */
             void add(Tick * tick) {
+                Serial.print("add begin");
+                Serial.println(this->begin);
                 list.append(tick);
 
                 if(this->begin) {
