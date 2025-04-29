@@ -1,7 +1,7 @@
 #pragma once
 #include <async/Task.h>
 #include <async/Tick.h>
-#include <async/LinkedList.h>
+#include <async/FastList.h>
 #include <async/Callbacks.h>
 
 namespace async { 
@@ -18,15 +18,17 @@ namespace async {
      */
     class Executor : public Tick {
         private:
-            LinkedList<Tick*> list; ///< List of managed Tick objects
+            FastList<Tick*> list; ///< List of managed Tick objects
             bool begin = false;
 
         public:
-            bool init() {
+            Executor() {}
+
+            bool start() override {
                 for(int i=0, size=list.size(); i < size; i++) {
                     Tick * tick = list.get(i);
 
-                    if(!tick->init()) {
+                    if(!tick->start()) {
                         return false;
                     }
                 }
@@ -45,7 +47,7 @@ namespace async {
                 list.append(tick);
 
                 if(this->begin) {
-                    tick->init();
+                    tick->start();
                 }
             }
 

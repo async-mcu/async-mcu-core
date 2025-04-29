@@ -47,14 +47,14 @@ namespace async {
              * @brief Destructor
              */
             ~Task() {
-                Serial.println("~Task");
+                //Serial.println("~Task");
                 //detachInterrupt(digitalPinToInterrupt(pin));
-                int val = digitalPinToInterrupt(pin);
+                //int val = digitalPinToInterrupt(pin);
                 //handlers[val].remove(this);
 
-                // if(from != nullptr) {
-                //     delete from;
-                // }
+                if(from != nullptr) {
+                    delete from;
+                }
             }
 
             /**
@@ -123,7 +123,7 @@ namespace async {
              * @brief Start a timed task
              * @return true
              */
-            bool init() {
+            bool start() {
                 if(this->type != DEMAND) {
                     this->state = RUN;
                 }

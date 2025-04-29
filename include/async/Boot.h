@@ -1,16 +1,19 @@
 #pragma once
 #include <async/Executor.h>
+#include <async/FastList.h>
 #include <async/LinkedList.h>
 #include <async/Callbacks.h>
 
 #define CORE0 0
 #define CORE1 1
 
-void setup() __attribute__ ((weak));
-void loop() __attribute__ ((weak));
-
 
 namespace async {
+    class Boot;
+
+    void setup() __attribute__ ((weak));
+    void loop() __attribute__ ((weak));
+    
     /**
      * @brief Callback function type for boot initialization
      * @param executor Pointer to the Executor instance
@@ -31,6 +34,8 @@ namespace async {
             InitCallback callback; ///< Initialization callback function
 
         public:
+        
+
             /**
              * @brief Construct a new Boot instance for core 0
              * @param initCallback The initialization callback function
@@ -42,6 +47,7 @@ namespace async {
              */
             void init() {
                 this->callback(executor);
+                this->executor->start();
             }
 
             /**
@@ -49,7 +55,7 @@ namespace async {
              * @return Pointer to the Executor instance
              */
             Executor * getExecutor() {
-                return executor;
+                return this->executor;
             }
 
             /**
@@ -57,7 +63,7 @@ namespace async {
              * @param index Core index (0 or 1)
              * @return Pointer to the Boot instance for the specified core
              */
-            static LinkedList<Boot *> & getBoots(int core);
+            static List<Boot *> & getBoots(byte core);
 
             #ifdef ARDUINO_ARCH_ESP32
             /**

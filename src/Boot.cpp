@@ -2,8 +2,9 @@
 
 using namespace async;
 
-LinkedList<Boot *> core0; ///< Array of boot instances for each core
-LinkedList<Boot *> core1; ///< Array of boot instances for each core
+
+FastList<Boot *> core0; ///< Array of boot instances for each core
+FastList<Boot *> core1; ///< Array of boot instances for each core
 
 Boot::Boot(InitCallback initCallback) {
     core0.append(this);
@@ -11,7 +12,7 @@ Boot::Boot(InitCallback initCallback) {
     this->executor = new Executor();
 }
 
-LinkedList<Boot *> & Boot::getBoots(int core) {
+List<Boot *> & Boot::getBoots(byte core) {
     if(core == 0) {
         return core0;
     }
@@ -30,7 +31,7 @@ Boot::Boot(byte core, InitCallback initCallback) {
     else {
         core1.append(this);
     }
-    
+
     this->callback = initCallback;
     this->executor = new Executor();
 }
@@ -58,7 +59,7 @@ void setup() {
     &taskLoopCore0,      // Task handle to keep track of created task //
     0);          // pin task to core 0 // 
 
-    xTaskCreatePinnedToCore([] (void * param) { 
+    xTaskCreatePinnedToCore([] (void * param) {
         for(int i=0, size = core1.size(); i < size; i++) {
             core1.get(i)->init();
         }

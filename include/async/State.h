@@ -18,7 +18,7 @@ namespace async {
         private:
             volatile T value;
             volatile T prevValue;
-            LinkedList<Task *> tasks;
+            FastList<Task *> tasks;
 
         public:
             State(T value) : value(value) {}

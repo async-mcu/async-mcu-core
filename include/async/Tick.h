@@ -63,14 +63,6 @@ namespace async {
          * 
          * @note Default implementation simply returns true
          */
-        virtual bool init() { return true; };
-
-        /**
-         * @brief Start the tickable object
-         * @return bool True if successful, false otherwise
-         * 
-         * @note Default implementation simply returns true
-         */
         virtual bool start() { return true; };
 
         /**

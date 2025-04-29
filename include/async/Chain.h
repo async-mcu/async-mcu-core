@@ -4,44 +4,15 @@
 #include <async/Task.h>
 #include <async/Executor.h>
 #include <async/Function.h>
-#include <async/LinkedList.h>
+#include <async/FastList.h>
 #include <async/Interrupt.h>
 #include <async/Callbacks.h>
+#include <async/Semaphore.h>
 
 //template void attachInterruptArg<void*>(uint8_t&, void (&)(void*), async::Chain<void>*, int&);
 //template void attachInterruptArg<int>(uint8_t, void (*)(int), int, int);
 
 namespace async {
-class Semaphore {
-    private:
-        int count;
-        const int maxCount;
-        bool locked = false;
-    
-    public:
-        Semaphore(int initialCount, int maximumCount)
-            : count(initialCount), maxCount(maximumCount) {}
-    
-        bool acquire() {
-            if (count > 0 && !locked) {
-                count--;
-                locked = true;
-                return true;
-            }
-            return false;
-        }
-    
-        void release() {
-            locked = false;
-            if (count < maxCount) {
-                count++;
-            }
-        }
-    
-        int available() const { return count; }
-    };
-
-    
     template<typename T = void>
     class Chain;
     
@@ -61,7 +32,7 @@ class Semaphore {
                 Task * task;
             };
         
-            LinkedList<Operation> operations;
+            FastList<Operation> operations;
             uint8_t operationCount;
             uint8_t currentOpIndex;
             unsigned long delayStart;
@@ -212,7 +183,6 @@ class Semaphore {
                         }
                         
                         if (millis() - delayStart >= op.timeout) {
-                            Serial.println("cleanupInterrupt");
                             cleanupInterrupt();
                             currentOpIndex++;
                             return true;
@@ -251,8 +221,7 @@ class Semaphore {
         uint8_t currentInterruptPin;
         bool shouldLoop = false;
         T value;
-        LinkedList<Task *> tasks;
-        LinkedList<Operation> operations;
+        FastList<Operation> operations;
     
         void addOperation(Operation op) {
             operations.append(op);
