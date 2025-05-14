@@ -3,6 +3,7 @@
 #include <async/Tick.h>
 #include <async/Task.h>
 #include <async/Executor.h>
+#include <async/Function.h>
 #include <async/FastList.h>
 #include <async/Interrupt.h>
 #include <async/Callbacks.h>
@@ -201,7 +202,7 @@ namespace async {
     // Шаблонная версия для типизированных цепочек
     template<typename T>
     class Chain : public Tick {
-        typedef std::function<T(T)> TypedCallback;
+        typedef Function<T(T)> TypedCallback;
 
         private:
         enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP };

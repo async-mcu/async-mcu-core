@@ -1,6 +1,6 @@
 #pragma once
-#include <functional>
+#include <async/Function.h>
 
 namespace async {
-    typedef std::function<void()> VoidCallback;
+    typedef Function<void()> VoidCallback;
 }
