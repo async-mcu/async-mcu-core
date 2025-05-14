@@ -2,7 +2,6 @@
 #include <async/Tick.h>
 #include <async/Time.h>
 #include <async/Duration.h>
-#include <async/Function.h>
 #include <async/LinkedList.h>
 #include <async/Callbacks.h>
 

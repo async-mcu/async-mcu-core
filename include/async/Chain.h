@@ -3,7 +3,6 @@
 #include <async/Tick.h>
 #include <async/Task.h>
 #include <async/Executor.h>
-#include <async/Function.h>
 #include <async/FastList.h>
 #include <async/Interrupt.h>
 #include <async/Callbacks.h>
@@ -32,7 +31,7 @@ namespace async {
                 Task * task;
             };
         
-            FastList<Operation> operations;
+            FastList<Operation*> operations;
             uint8_t operationCount;
             uint8_t currentOpIndex;
             unsigned long delayStart;
@@ -40,7 +39,7 @@ namespace async {
             uint8_t currentInterruptPin;
             bool shouldLoop = false;
         
-            void addOperation(Operation op) {
+            void addOperation(Operation * op) {
                 operations.append(op);
                 operationCount++;
             }
@@ -65,47 +64,51 @@ namespace async {
         
             ~Chain() {
                 cleanupInterrupt();
+
+                for(int i=0; i < operations.size(); i++) {
+                    delete operations[i];
+                }
             }
         
             Chain* delay(unsigned long ms) {
-                Operation op;
-                op.type = OpType::DELAY;
-                op.delay = ms;
+                auto op = new Operation();
+                op->type = OpType::DELAY;
+                op->delay = ms;
                 addOperation(op);
                 return this;
             }
         
             Chain* then(VoidCallback callback) {
-                Operation op;
-                op.type = OpType::THEN;
-                op.callback = callback;
+                auto op = new Operation();
+                op->type = OpType::THEN;
+                op->callback = callback;
                 addOperation(op);
                 return this;
             }
         
             Chain* semaphoreWait(Semaphore* sem) {
-                Operation op;
-                op.type = OpType::SEMAPHORE_WAIT;
-                op.semaphore = sem;
+                auto op = new Operation();
+                op->type = OpType::SEMAPHORE_WAIT;
+                op->semaphore = sem;
                 addOperation(op);
                 return this;
             }
 
             Chain* semaphoreSkip(Semaphore* sem) {
-                Operation op;
-                op.type = OpType::SEMAPHORE_SKIP;
-                op.semaphore = sem;
+                auto op = new Operation();
+                op->type = OpType::SEMAPHORE_SKIP;
+                op->semaphore = sem;
                 addOperation(op);
                 return this;
             }
         
             Chain* interrupt(Interrupt * interrupt, unsigned long timeout = 0xFFFFFFFF) {
-                Operation op;
-                op.type = OpType::INTERR;
-                op.timeout = timeout;
-                op.pin = interrupt->getPin();
+                auto op = new Operation();
+                op->type = OpType::INTERR;
+                op->timeout = timeout;
+                op->pin = interrupt->getPin();
 
-                op.task = interrupt->onInterrupt([interrupt, this]() {
+                op->task = interrupt->onInterrupt([interrupt, this]() {
                     if(interrupt->getPin() == this->currentInterruptPin) {
                         this->interruptTriggered = true;
                     }
@@ -129,15 +132,15 @@ namespace async {
                     return false;
                 }
                 
-                Operation op = operations.get(currentOpIndex); //[currentOpIndex];
+                Operation * op = operations.get(currentOpIndex); //[currentOpIndex];
 
-                if(op.type == OpType::INTERR) {
-                    op.task->tick();
+                if(op->type == OpType::INTERR) {
+                    op->task->tick();
                 }
                 
-                switch (op.type) {
+                switch (op->type) {
                     case OpType::SEMAPHORE_WAIT:
-                        if (!op.semaphore->acquire()) {
+                        if (!op->semaphore->acquire()) {
                             return true; // Продолжаем ждать
                         }
                         currentOpIndex++;
@@ -145,7 +148,7 @@ namespace async {
                         return true;
 
                     case OpType::SEMAPHORE_SKIP:
-                        if (!op.semaphore->acquire()) {
+                        if (!op->semaphore->acquire()) {
                             currentOpIndex = operations.size();
                             return true; // завершаем программу
                         }
@@ -156,7 +159,7 @@ namespace async {
                         return true;
                         
                     case OpType::DELAY:
-                        if (millis() - delayStart < op.delay) {
+                        if (millis() - delayStart < op->delay) {
                             return true;
                         }
                         delayStart = millis();
@@ -164,13 +167,13 @@ namespace async {
                         return true;
                         
                     case OpType::THEN:
-                        op.callback();
+                        op->callback();
                         currentOpIndex++;
                         return true;
                         
                     case OpType::INTERR:
                         if (currentInterruptPin == 255) {
-                            currentInterruptPin = op.pin;
+                            currentInterruptPin = op->pin;
                             interruptTriggered = false;
 
                             delayStart = millis();
@@ -182,7 +185,7 @@ namespace async {
                             return true;
                         }
                         
-                        if (millis() - delayStart >= op.timeout) {
+                        if (millis() - delayStart >= op->timeout) {
                             cleanupInterrupt();
                             currentOpIndex++;
                             return true;
@@ -198,7 +201,7 @@ namespace async {
     // Шаблонная версия для типизированных цепочек
     template<typename T>
     class Chain : public Tick {
-        typedef Function<T(T)> TypedCallback;
+        typedef std::function<T(T)> TypedCallback;
 
         private:
         enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP };
@@ -221,9 +224,9 @@ namespace async {
         uint8_t currentInterruptPin;
         bool shouldLoop = false;
         T value;
-        FastList<Operation> operations;
+        FastList<Operation *> operations;
     
-        void addOperation(Operation op) {
+        void addOperation(Operation * op) {
             operations.append(op);
             operationCount++;
         }
@@ -246,46 +249,50 @@ namespace async {
     
         ~Chain() {
             cleanupInterrupt();
+
+            for(int i=0; i < operations.size(); i++) {
+                delete operations[i];
+            }
         }
     
         Chain* delay(unsigned long ms) {
-            Operation op;
-            op.type = OpType::DELAY;
-            op.delay = ms;
+            auto op = new Operation();
+            op->type = OpType::DELAY;
+            op->delay = ms;
             addOperation(op);
             return this;
         }
     
         Chain* then(TypedCallback callback) {
-            Operation op;
-            op.type = OpType::THEN;
-            op.callback = callback;
+            auto op = new Operation();
+            op->type = OpType::THEN;
+            op->callback = callback;
             addOperation(op);
             return this;
         }
     
         Chain* semaphoreWait(Semaphore* sem) {
-            Operation op;
-            op.type = OpType::SEMAPHORE_WAIT;
-            op.semaphore = sem;
+            auto op = new Operation();
+            op->type = OpType::SEMAPHORE_WAIT;
+            op->semaphore = sem;
             addOperation(op);
             return this;
         }
 
         Chain* semaphoreSkip(Semaphore* sem) {
-            Operation op;
-            op.type = OpType::SEMAPHORE_SKIP;
-            op.semaphore = sem;
+            auto op = new Operation();
+            op->type = OpType::SEMAPHORE_SKIP;
+            op->semaphore = sem;
             addOperation(op);
             return this;
         }
     
         Chain* interrupt(Interrupt * interrupt, unsigned long timeout = 0xFFFFFFFF) {
-            Operation op;
-            op.type = OpType::INTERR;
-            op.timeout = timeout;
-            op.pin = interrupt->getPin();
-            op.task = interrupt->onInterrupt([interrupt, this]() {;
+            auto op = new Operation();
+            op->type = OpType::INTERR;
+            op->timeout = timeout;
+            op->pin = interrupt->getPin();
+            op->task = interrupt->onInterrupt([interrupt, this]() {;
                 if(interrupt->getPin() == this->currentInterruptPin) {
                     this->interruptTriggered = true;
                 }
@@ -308,15 +315,15 @@ namespace async {
                 return false;
             }
     
-            Operation op = operations.get(currentOpIndex); //[currentOpIndex];
+            Operation * op = operations.get(currentOpIndex); //[currentOpIndex];
 
-            if(op.type == OpType::INTERR) {
-                op.task->tick();
+            if(op->type == OpType::INTERR) {
+                op->task->tick();
             }
             
-            switch (op.type) {
+            switch (op->type) {
                 case OpType::SEMAPHORE_WAIT:
-                    if (!op.semaphore->acquire()) {
+                    if (!op->semaphore->acquire()) {
                         return true; // Продолжаем ждать
                     }
                     currentOpIndex++;
@@ -324,7 +331,7 @@ namespace async {
                     return true;
 
                 case OpType::SEMAPHORE_SKIP:
-                    if (!op.semaphore->acquire()) {
+                    if (!op->semaphore->acquire()) {
                         currentOpIndex = operations.size();
                         return true; // завершаем программу
                     }
@@ -335,7 +342,7 @@ namespace async {
                     return true;
                     
                 case OpType::DELAY:
-                    if (millis() - delayStart < op.delay) {
+                    if (millis() - delayStart < op->delay) {
                         return true;
                     }
                     delayStart = millis();
@@ -343,13 +350,13 @@ namespace async {
                     return true;
                     
                 case OpType::THEN:
-                    value = op.callback(value);
+                    value = op->callback(value);
                     currentOpIndex++;
                     return true;
                     
                 case OpType::INTERR:
                     if (currentInterruptPin == 255) {
-                        currentInterruptPin = op.pin;
+                        currentInterruptPin = op->pin;
                         interruptTriggered = false;
 
                         delayStart = millis();
@@ -361,7 +368,7 @@ namespace async {
                         return true;
                     }
                     
-                    if (millis() - delayStart >= op.timeout) {
+                    if (millis() - delayStart >= op->timeout) {
                         cleanupInterrupt();
                         currentOpIndex++;
                         return true;

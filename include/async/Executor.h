@@ -36,8 +36,6 @@ namespace async {
              * @note The executor takes ownership of the Tick object's lifecycle
              */
             void add(Tick * tick) {
-                Serial.print("add begin");
-                Serial.println(this->begin);
                 list.append(tick);
 
                 if(this->begin) {

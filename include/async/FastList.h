@@ -25,7 +25,10 @@ namespace async {
         }
     
     public:
-        FastList(): _size(0), _capacity(0), buffer(nullptr) {}
+        FastList(size_t capacity = 0): _size(0), _capacity(capacity), buffer(nullptr) {
+            expand();
+        }
+
         ~FastList() {
             if (buffer) free((void*)buffer); 
         }
