@@ -203,14 +203,16 @@ namespace async {
     template<typename T>
     class Chain : public Tick {
         typedef Function<T(T)> TypedCallback;
+        typedef Function<bool(T)> TypedAgainCallback;
 
         private:
-        enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP };
+        enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP, CYCLE, AGAIN };
         
         struct Operation {
             OpType type;
             unsigned long delay;
             TypedCallback callback;
+            TypedAgainCallback againCallback;
             Semaphore* semaphore;
             uint8_t pin;
             unsigned long timeout;
@@ -224,6 +226,7 @@ namespace async {
         volatile bool interruptTriggered;
         uint8_t currentInterruptPin;
         bool shouldLoop = false;
+        bool cycleExitFlag = false;
         T value;
         FastList<Operation *> operations;
     
@@ -268,6 +271,22 @@ namespace async {
             auto op = new Operation();
             op->type = OpType::THEN;
             op->callback = callback;
+            addOperation(op);
+            return this;
+        }
+    
+        Chain* cycle(TypedCallback callback) {
+            auto op = new Operation();
+            op->type = OpType::CYCLE;
+            op->callback = callback;
+            addOperation(op);
+            return this;
+        }
+    
+        Chain* again(TypedAgainCallback callback) {
+            auto op = new Operation();
+            op->type = OpType::AGAIN;
+            op->againCallback = callback;
             addOperation(op);
             return this;
         }
@@ -354,6 +373,30 @@ namespace async {
                     value = op->callback(value);
                     currentOpIndex++;
                     return true;
+                    
+                case OpType::AGAIN: {
+                    bool result = op->againCallback(value);
+                    if(result) {
+                        resetChain();
+                    }
+                    else {
+                        currentOpIndex++;
+                    }
+                    return true;
+                }
+                    
+                case OpType::CYCLE: {
+                    T result = op->callback(value);
+
+                    if(result == (T)nullptr) {
+                        currentOpIndex++;
+                    }
+                    else {
+                        value = result;
+                    }
+
+                    return true;
+                }
                     
                 case OpType::INTERR:
                     if (currentInterruptPin == 255) {
