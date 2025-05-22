@@ -1,4 +1,4 @@
-#include <async/Interrupt.h>
+#include <async/Pin.h>
 
 using namespace async;
 

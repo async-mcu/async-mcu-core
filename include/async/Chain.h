@@ -5,7 +5,7 @@
 #include <async/Executor.h>
 #include <async/Function.h>
 #include <async/FastList.h>
-#include <async/Interrupt.h>
+#include <async/Pin.h>
 #include <async/Callbacks.h>
 #include <async/Semaphore.h>
 
@@ -24,11 +24,11 @@ namespace async {
             
             struct Operation {
                 OpType type;
-                unsigned long delay;
                 VoidCallback callback;
-                Semaphore* semaphore;
+                unsigned long delay;
                 unsigned long timeout;
-                int pin;
+                Semaphore * semaphore;
+                Pin * pin;
                 Task * task;
             };
         
@@ -71,7 +71,7 @@ namespace async {
                 }
             }
         
-            Chain* delay(unsigned long ms) {
+            Chain * delay(unsigned long ms) {
                 auto op = new Operation();
                 op->type = OpType::DELAY;
                 op->delay = ms;
@@ -79,7 +79,7 @@ namespace async {
                 return this;
             }
         
-            Chain* then(VoidCallback callback) {
+            Chain * then(VoidCallback callback) {
                 auto op = new Operation();
                 op->type = OpType::THEN;
                 op->callback = callback;
@@ -87,7 +87,7 @@ namespace async {
                 return this;
             }
         
-            Chain* semaphoreWait(Semaphore* sem) {
+            Chain * semaphoreWaitAcquire(Semaphore* sem) {
                 auto op = new Operation();
                 op->type = OpType::SEMAPHORE_WAIT;
                 op->semaphore = sem;
@@ -95,7 +95,7 @@ namespace async {
                 return this;
             }
 
-            Chain* semaphoreSkip(Semaphore* sem) {
+            Chain * semaphoreSkipToStartIfNotAcquired(Semaphore* sem) {
                 auto op = new Operation();
                 op->type = OpType::SEMAPHORE_SKIP;
                 op->semaphore = sem;
@@ -103,14 +103,14 @@ namespace async {
                 return this;
             }
         
-            Chain* interrupt(Interrupt * interrupt, unsigned long timeout = 0xFFFFFFFF) {
+            Chain * interrupt(Pin * pin, int edge, unsigned long timeout = 0xFFFFFFFF) {
                 auto op = new Operation();
                 op->type = OpType::INTERR;
                 op->timeout = timeout;
-                op->pin = interrupt->getPin();
+                op->pin = pin;
 
-                op->task = interrupt->onInterrupt([interrupt, this]() {
-                    if(interrupt->getPin() == this->currentInterruptPin) {
+                op->task = pin->onInterrupt(edge, [pin, this]() {
+                    if(pin->getPin() == this->currentInterruptPin) {
                         this->interruptTriggered = true;
                     }
                 });
@@ -119,7 +119,7 @@ namespace async {
                 return this;
             }
         
-            Chain* loop() {
+            Chain * loop() {
                 shouldLoop = true;
                 return this;
             }
@@ -174,7 +174,7 @@ namespace async {
                         
                     case OpType::INTERR:
                         if (currentInterruptPin == 255) {
-                            currentInterruptPin = op->pin;
+                            currentInterruptPin = op->pin->getPin();
                             interruptTriggered = false;
 
                             delayStart = millis();
@@ -211,11 +211,11 @@ namespace async {
         struct Operation {
             OpType type;
             unsigned long delay;
+            unsigned long timeout;
             TypedCallback callback;
             TypedAgainCallback againCallback;
-            Semaphore* semaphore;
-            uint8_t pin;
-            unsigned long timeout;
+            Semaphore * semaphore;
+            Pin * pin;
             Task * task;
         };
     
@@ -291,7 +291,7 @@ namespace async {
             return this;
         }
     
-        Chain* semaphoreWait(Semaphore* sem) {
+        Chain* semaphoreWaitAcquire(Semaphore* sem) {
             auto op = new Operation();
             op->type = OpType::SEMAPHORE_WAIT;
             op->semaphore = sem;
@@ -299,7 +299,7 @@ namespace async {
             return this;
         }
 
-        Chain* semaphoreSkip(Semaphore* sem) {
+        Chain* semaphoreSkipToStartIfNotAcquired(Semaphore* sem) {
             auto op = new Operation();
             op->type = OpType::SEMAPHORE_SKIP;
             op->semaphore = sem;
@@ -307,13 +307,14 @@ namespace async {
             return this;
         }
     
-        Chain* interrupt(Interrupt * interrupt, unsigned long timeout = 0xFFFFFFFF) {
+        Chain* interrupt(Pin * pin, int edge, unsigned long timeout = 0xFFFFFFFF) {
             auto op = new Operation();
             op->type = OpType::INTERR;
             op->timeout = timeout;
-            op->pin = interrupt->getPin();
-            op->task = interrupt->onInterrupt([interrupt, this]() {;
-                if(interrupt->getPin() == this->currentInterruptPin) {
+            op->pin = pin;
+
+            op->task = pin->onInterrupt(edge, [pin, this]() {;
+                if(pin->getPin() == this->currentInterruptPin) {
                     this->interruptTriggered = true;
                 }
             });
@@ -400,7 +401,7 @@ namespace async {
                     
                 case OpType::INTERR:
                     if (currentInterruptPin == 255) {
-                        currentInterruptPin = op->pin;
+                        currentInterruptPin = op->pin->getPin();
                         interruptTriggered = false;
 
                         delayStart = millis();

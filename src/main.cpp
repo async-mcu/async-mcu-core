@@ -1,14 +1,23 @@
 #include <async/Log.h>
 #include <async/Chain.h>
-#include <async/Boot.h>
+#include <async/Pin.h>
 
 using namespace async;
 
 Executor executor;
+Pin pin(23, INPUT_PULLUP);
+
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("123");
   executor.start();
+
+  executor.add(&pin);
+
+  executor.add(pin.onInterrupt(RISING, []() {
+    //info("onInterrupt");
+  }));
 
   auto ch = chain(0)
       ->delay(2000)
@@ -20,6 +29,7 @@ void setup() {
         info("Intermediate value %d", val);
         return val+1;
       })
+      ->interrupt(&pin, FALLING)
       ->delay(2000)
       // ->animate(0, 100, Duration(2000), [](int current, int target) {
       //   info("Animate value %d, value %d", current, target);
@@ -28,15 +38,14 @@ void setup() {
       ->then([](int val) {
         info("Final value %d", val);
         return val;
-      });
-      //->loop();
+      })
+      ->loop();
 
-      executor.add(ch);
+  executor.add(ch);
 }
 
 void loop() {
   executor.tick();
-  delay(1000);
 }
 
 // Boot zBoot([](Executor * executor) {
