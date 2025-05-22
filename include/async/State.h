@@ -12,20 +12,21 @@
 namespace async { 
     template<typename T>
     class State {
-        typedef Function<void(T, T)> OnChangeAllArgsCallback;
-        typedef Function<T(T)> GetAndSetAllArgsCallback;
-
         private:
-            volatile T value;
-            volatile T prevValue;
             FastList<Task *> tasks;
+
+        protected:
+            T value;
+            T prevValue;
+            typedef Function<void(T, T)> OnChangeAllArgsCallback;
+            typedef Function<T(T)> GetAndSetAllArgsCallback;
 
         public:
             State(T value) : value(value) {}
             Task * onChange(OnChangeAllArgsCallback cbCallback);
-            void getAndSet(GetAndSetAllArgsCallback cbCallback);
-            T get();
-            void set(T value, bool force = false);
+            virtual void getAndSet(GetAndSetAllArgsCallback cbCallback);
+            virtual T get();
+            virtual void set(T value, bool force = false);
     };
 
     template <typename T>

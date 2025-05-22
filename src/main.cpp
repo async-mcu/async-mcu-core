@@ -1,47 +1,31 @@
 #include <async/Log.h>
 #include <async/Chain.h>
 #include <async/Pin.h>
+#include <async/Setting.h>
 
 using namespace async;
 
 Executor executor;
 Pin pin(23, INPUT_PULLUP);
 
+Setting<int> val("0", 10);
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("123");
+  Serial.println("setup");
   executor.start();
 
-  executor.add(&pin);
-
-  executor.add(pin.onInterrupt(RISING, []() {
-    //info("onInterrupt");
+  executor.add(val.onChange([](int current, int last) {
+    info("set val from %d to %d", last, current);
   }));
 
-  auto ch = chain(0)
-      ->delay(2000)
-      ->then([](int val) {
-        info("Start value %d", val);
-        return val+1;
-      })
-      ->then([](int val) {
-        info("Intermediate value %d", val);
-        return val+1;
-      })
-      ->interrupt(&pin, FALLING)
-      ->delay(2000)
-      // ->animate(0, 100, Duration(2000), [](int current, int target) {
-      //   info("Animate value %d, value %d", current, target);
-      //   return target + current;
-      // })
-      ->then([](int val) {
-        info("Final value %d", val);
-        return val;
-      })
-      ->loop();
-
-  executor.add(ch);
+  executor.onDelay(1000, [] () {
+    info("set");
+    val.getAndSet([](int value) {
+      info("set 12 %d", value);
+      return value + 10;
+    });
+  });
 }
 
 void loop() {
