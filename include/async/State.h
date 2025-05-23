@@ -2,7 +2,8 @@
 #include <async/Log.h>
 #include <async/Task.h>
 #include <async/Function.h>
-#include <async/LinkedList.h>
+#include <async/FastList.h>
+#include <async/BaseState.h>
 /**
  * Класс для хранения состояния переменной
  * конструктор содержит тип переменной и её начальное значение (если оно есть)
@@ -11,7 +12,7 @@
  */
 namespace async { 
     template<typename T>
-    class State {
+    class State : BaseState {
         private:
             FastList<Task *> tasks;
 
