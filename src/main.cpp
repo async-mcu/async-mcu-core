@@ -8,7 +8,7 @@ using namespace async;
 Executor executor;
 Pin pin(23, INPUT_PULLUP);
 
-Setting<int> val("0", 10);
+Setting<int> val("name", 0x0000, 10);
 
 void setup() {
   Serial.begin(115200);
