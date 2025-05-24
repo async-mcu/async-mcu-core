@@ -16,6 +16,7 @@ namespace async {
     class Setting<int> : public State<int> {
         private:
         const char * uuid;
+        uint16_t uuid16;
         Preferences prefs;
         int defaultValue;
 
@@ -27,13 +28,18 @@ namespace async {
         }
 
         public:
-        Setting (const char * uuid, int defaultValue) : State<int>(defaultValue) {
+        Setting (const char * uuid, uint16_t uuid16, int defaultValue) : State<int>(defaultValue) {
             this->uuid = uuid;
+            this->uuid16 = uuid16;
             this->defaultValue = defaultValue;
         }
 
         const char * getUuid() {
             return this->uuid;
+        }
+
+        uint16_t getUuid16() {
+            return this->uuid16;
         }
 
         void getAndSet(GetAndSetAllArgsCallback cbCallback) {
@@ -59,6 +65,7 @@ namespace async {
     class Setting<float> : public State<float> {
         private:
         const char * uuid;
+        uint16_t uuid16;
         Preferences prefs;
         float defaultValue;
 
@@ -70,13 +77,18 @@ namespace async {
         }
 
         public:
-        Setting (const char * uuid, float defaultValue) : State<float>(defaultValue) {
+        Setting (const char * uuid, uint16_t uuid16, float defaultValue) : State<float>(defaultValue) {
             this->uuid = uuid;
+            this->uuid16 = uuid16;
             this->defaultValue = defaultValue;
         }
 
         const char * getUuid() {
             return this->uuid;
+        }
+
+        uint16_t getUuid16() {
+            return this->uuid16;
         }
 
         void getAndSet(GetAndSetAllArgsCallback cbCallback) {
@@ -102,6 +114,7 @@ namespace async {
     class Setting<double> : public State<double> {
         private:
         const char * uuid;
+        uint16_t uuid16;
         Preferences prefs;
         double defaultValue;
 
@@ -113,13 +126,18 @@ namespace async {
         }
 
         public:
-        Setting (const char * uuid, double defaultValue) : State<double>(defaultValue) {
+        Setting (const char * uuid, uint16_t uuid16, double defaultValue) : State<double>(defaultValue) {
             this->uuid = uuid;
+            this->uuid16 = uuid16;
             this->defaultValue = defaultValue;
         }
 
         const char * getUuid() {
             return this->uuid;
+        }
+
+        uint16_t getUuid16() {
+            return this->uuid16;
         }
 
         void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
@@ -145,6 +163,7 @@ namespace async {
     class Setting<bool> : public State<bool> {
         private:
         const char * uuid;
+        uint16_t uuid16;
         Preferences prefs;
         bool defaultValue;
 
@@ -156,13 +175,18 @@ namespace async {
         }
 
         public:
-        Setting (const char * uuid, bool defaultValue) : State<bool>(defaultValue) {
+        Setting (const char * uuid, uint16_t uuid16, bool defaultValue) : State<bool>(defaultValue) {
             this->uuid = uuid;
+            this->uuid16 = uuid16;
             this->defaultValue = defaultValue;
         }
 
         const char * getUuid() {
             return this->uuid;
+        }
+
+        uint16_t getUuid16() {
+            return this->uuid16;
         }
 
         void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
@@ -188,6 +212,7 @@ namespace async {
     class Setting<String> : public State<String> {
         private:
         const char * uuid;
+        uint16_t uuid16;
         Preferences prefs;
         String defaultValue;
 
@@ -199,13 +224,18 @@ namespace async {
         }
 
         public:
-        Setting (const char * uuid, String defaultValue) : State<String>(defaultValue) {
+        Setting (const char * uuid, uint16_t uuid16, String defaultValue) : State<String>(defaultValue) {
             this->uuid = uuid;
+            this->uuid16 = uuid16;
             this->defaultValue = defaultValue;
         }
 
         const char * getUuid() {
             return this->uuid;
+        }
+
+        uint16_t getUuid16() {
+            return this->uuid16;
         }
 
         void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
