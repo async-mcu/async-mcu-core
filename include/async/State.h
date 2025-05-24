@@ -2,8 +2,8 @@
 #include <async/Log.h>
 #include <async/Task.h>
 #include <async/Function.h>
-#include <async/FastList.h>
-#include <async/BaseState.h>
+#include <async/LinkedList.h>
+#include <vector>
 /**
  * Класс для хранения состояния переменной
  * конструктор содержит тип переменной и её начальное значение (если оно есть)
@@ -12,53 +12,48 @@
  */
 namespace async { 
     template<typename T>
-    class State : BaseState {
-        private:
-            FastList<Task *> tasks;
-
+    class State : public Tick {
         protected:
-            T value;
+            T currValue;
             T prevValue;
+            Task * task;
             typedef Function<void(T, T)> OnChangeAllArgsCallback;
             typedef Function<T(T)> GetAndSetAllArgsCallback;
 
+        private:
+            std::vector<OnChangeAllArgsCallback> callbacks;
+
         public:
-            State(T value) : value(value) {}
-            Task * onChange(OnChangeAllArgsCallback cbCallback);
-            virtual void getAndSet(GetAndSetAllArgsCallback cbCallback);
-            virtual T get();
-            virtual void set(T value, bool force = false);
-    };
-
-    template <typename T>
-    inline Task * State<T>::onChange(OnChangeAllArgsCallback cbCallback) {
-        auto task =  new Task(Task::DEMAND, [&, cbCallback] () {
-            cbCallback(value, prevValue);
-        });
-
-        tasks.append(task);
-        return task;
-    }
-
-    template <typename T>
-    inline void State<T>::getAndSet(GetAndSetAllArgsCallback cbCallback) {
-        this->set(cbCallback(this->value));
-    }
-
-    template <typename T>
-    inline T State<T>::get() {
-        return this->value;
-    }
-
-    template <typename T>
-    inline void State<T>::set(T value, bool force) {
-        if(this->value != value || force) {
-            this->prevValue = this->value;
-            this->value = value;
-
-            for(int i=0; i < tasks.size(); i++) {
-                tasks.get(i)->demand();
+            State(T value) : currValue(value) {
+                task = new Task(Task::DEMAND, [&] () {
+                    for(int i=0; i < callbacks.size(); i++) {
+                        callbacks[i](currValue, prevValue);
+                    }
+                });
             }
-        }
-    }
+            void onChange(OnChangeAllArgsCallback cbCallback) { 
+                callbacks.push_back(cbCallback);
+            }
+
+            void getAndSet(GetAndSetAllArgsCallback cbCallback) {
+                this->set(cbCallback(this->value));
+            }
+
+            virtual T get() {
+                return this->currValue;
+            }
+
+            virtual void set(T value, bool force = false) {
+                if(this->currValue != value || force) {
+                    this->prevValue = this->currValue;
+                    this->currValue = value;
+
+                    task->demand();
+                }
+            }
+
+            bool tick() override {
+                return task->tick();
+            };
+    };
 }

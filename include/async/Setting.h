@@ -2,6 +2,10 @@
 #include <async/State.h>
 #include <Preferences.h>
 
+#define SETTINGS_NAMESPACE "S"
+#define RW_MODE false
+#define RO_MODE true
+
 namespace async {
     template <typename T>
     class Setting : public async::State<T> {
@@ -14,11 +18,12 @@ namespace async {
         const char * uuid;
         Preferences prefs;
         int defaultValue;
-        bool init = false;
 
-        void start() {
-            init = true;
-            this->value = prefs.getInt(this->uuid, defaultValue);
+        bool start() {
+            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+            this->currValue = prefs.getInt(this->uuid, defaultValue);
+            prefs.end();
+            return true;
         }
 
         public:
@@ -31,20 +36,15 @@ namespace async {
             return this->uuid;
         }
 
-        int get() override {
-            if(!init) start();
-            return this->value;
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback) override {
+        void getAndSet(GetAndSetAllArgsCallback cbCallback) {
             this->set(cbCallback(get()));
         }
 
         void set(int value, bool  force = false) override {
-            if(!init) start();
-
-            if(this->value != value || force) {
+            if(this->get() != value || force) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
                 prefs.putInt(this->uuid, value);
+                prefs.end();
                 State<int>::set(value, force);
             }
         }
@@ -61,11 +61,12 @@ namespace async {
         const char * uuid;
         Preferences prefs;
         float defaultValue;
-        bool init = false;
 
-        void start() {
-            init = true;
-            this->value = prefs.getFloat(this->uuid, defaultValue);
+        bool start() {
+            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+            this->currValue = prefs.getFloat(this->uuid, defaultValue);
+            prefs.end();
+            return true;
         }
 
         public:
@@ -78,20 +79,15 @@ namespace async {
             return this->uuid;
         }
 
-        float get() override {
-            if(!init) start();
-            return this->value;
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback) override {
+        void getAndSet(GetAndSetAllArgsCallback cbCallback) {
             this->set(cbCallback(get()));
         }
 
-        void set(float value, bool  force = false) override {
-            if(!init) start();
-
-            if(this->value != value || force) {
+        void set(float value, bool  force = false) {
+            if(this->get() != value || force) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
                 prefs.putFloat(this->uuid, value);
+                prefs.end();
                 State<float>::set(value, force);
             }
         }
@@ -108,11 +104,12 @@ namespace async {
         const char * uuid;
         Preferences prefs;
         double defaultValue;
-        bool init = false;
 
-        void start() {
-            init = true;
-            this->value = prefs.getDouble(this->uuid, defaultValue);
+        bool start() {
+            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+            this->currValue = prefs.getDouble(this->uuid, defaultValue);
+            prefs.end();
+            return true;
         }
 
         public:
@@ -125,20 +122,15 @@ namespace async {
             return this->uuid;
         }
 
-        double get() override {
-            if(!init) start();
-            return this->value;
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback) override {
+        void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
             this->set(cbCallback(get()));
         }
 
-        void set(double value, bool  force = false) override {
-            if(!init) start();
-
-            if(this->value != value || force) {
+        void set(double value, bool  force = false)  {
+            if(this->currValue != value || force) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
                 prefs.putDouble(this->uuid, value);
+                prefs.end();
                 State<double>::set(value, force);
             }
         }
@@ -155,11 +147,12 @@ namespace async {
         const char * uuid;
         Preferences prefs;
         bool defaultValue;
-        bool init = false;
 
-        void start() {
-            init = true;
-            this->value = prefs.getBool(this->uuid, defaultValue);
+        bool start() {
+            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+            this->currValue = prefs.getBool(this->uuid, defaultValue);
+            prefs.end();
+            return true;
         }
 
         public:
@@ -172,20 +165,15 @@ namespace async {
             return this->uuid;
         }
 
-        bool get() override {
-            if(!init) start();
-            return this->value;
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback) override {
+        void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
             this->set(cbCallback(get()));
         }
 
-        void set(bool value, bool  force = false) override {
-            if(!init) start();
-
-            if(this->value != value || force) {
+        void set(bool value, bool  force = false)  {
+            if(this->get() != value || force) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
                 prefs.putBool(this->uuid, value);
+                prefs.end();
                 State<bool>::set(value, force);
             }
         }
@@ -202,12 +190,12 @@ namespace async {
         const char * uuid;
         Preferences prefs;
         String defaultValue;
-        bool init = false;
 
-        void start() {
-            init = true;
-
-            this->value = prefs.getString(this->uuid, defaultValue);
+        bool start() {
+            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+            this->currValue = prefs.getString(this->uuid, defaultValue);
+            prefs.end();
+            return true;
         }
 
         public:
@@ -220,20 +208,15 @@ namespace async {
             return this->uuid;
         }
 
-        String get() override {
-            if(!init) start();
-            return State<String>::get();
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback) override {
+        void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
             this->set(cbCallback(get()));
         }
 
-        void set(String value, bool  force = false) override {
-            if(!init) start();
-
+        void set(String value, bool  force = false)  {
             if(get() != value || force) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
                 prefs.putString(this->uuid, value);
+                prefs.end();
                 State<String>::set(value, force);
             }
         }
@@ -242,92 +225,5 @@ namespace async {
             prefs.remove(this->uuid);
             State<String>::set(defaultValue, true);
         }
-
-        ~Setting() {
-            if(init) {
-                prefs.end();
-            }
-        }
     };
-    // template<typename T>
-    // class Setting : public State<T> {
-    //     private:
-    //     const char * uuid;
-    //     Preferences prefs;
-    //     T defaultValue;
-    //     bool init = false;
-
-    //     void start() {
-    //         init = true;
-    //         prefs.begin("settings", false);
-
-    //         if (std::is_same<T, int>::value) {
-    //             this->value = prefs.getInt(this->uuid, defaultValue);
-    //         }
-    //         else if (std::is_same<T, float>::value) {
-    //             this->value = prefs.getFloat(this->uuid, defaultValue);
-    //         }
-    //         else if (std::is_same<T, double>::value) {
-    //             this->value = prefs.getDouble(this->uuid, defaultValue);
-    //         }
-    //         else if (std::is_same<T, bool>::value) {
-    //             this->value = prefs.getBool(this->uuid, defaultValue);
-    //         }
-    //         else if (std::is_same<T, String>::value) {
-    //             this->value = prefs.getString(this->uuid, defaultValue);
-    //         }
-    //         else if (std::is_same<T, const char*>::value) {
-    //             String result = prefs.getString(this->uuid, String(defaultValue));
-    //             this->value = result.c_str(); // Не забудьте освободить память!
-    //         }
-    //         else {
-    //             static_assert(sizeof(T) == -1, "Unsupported type for Setting");
-    //         }
-    //     }
-
-    //     public:
-    //     Setting<T> (const char * uuid, T defaultValue) : State<T>(defaultValue) {
-    //         this->uuid = uuid;
-    //         this->defaultValue = defaultValue;
-    //     }
-
-    //     const char * getUuid() {
-    //         return this->uuid;
-    //     }
-
-    //     T get() override {
-    //         if(!init) start();
-    //         return this->value;
-    //     }
-
-    //     void set(T value, bool  force = false) override {
-    //         if(!init) start();
-
-    //         Serial.println("set");
-
-    //         if(this->value != value || force) {
-    //             if (std::is_same<T, int>::value) {
-    //         Serial.println("set int");
-    //                 prefs.putInt(this->uuid, value);
-    //             }
-    //             else if (std::is_same<T, float>::value) {
-    //                 prefs.putFloat(this->uuid, value);
-    //             }
-    //             else if (std::is_same<T, double>::value) {
-    //                 prefs.putDouble(this->uuid, value);
-    //             }
-    //             else if (std::is_same<T, bool>::value) {
-    //                 prefs.putBool(this->uuid, value);
-    //             }
-    //             else if(std::is_same<T, String>::value) {
-    //                 prefs.putString(this->uuid, value);
-    //             }
-    //             else {
-    //                 static_assert(sizeof(T) == 0, "Unsupported type for Setting");
-    //             }
-
-    //             State<T>::set(value, force);
-    //         }
-    //     }
-    // };
 }

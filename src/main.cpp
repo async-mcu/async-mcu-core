@@ -15,9 +15,9 @@ void setup() {
   Serial.println("setup");
   executor.start();
 
-  executor.add(val.onChange([](int current, int last) {
+  val.onChange([](int current, int last) {
     info("set val from %d to %d", last, current);
-  }));
+  });
 
   executor.onDelay(1000, [] () {
     info("set");
