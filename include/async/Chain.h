@@ -170,6 +170,7 @@ namespace async {
                     case OpType::THEN:
                         op->callback();
                         currentOpIndex++;
+                        delayStart = millis();
                         return true;
                         
                     case OpType::INTERR:
@@ -373,6 +374,7 @@ namespace async {
                 case OpType::THEN:
                     value = op->callback(value);
                     currentOpIndex++;
+                    delayStart = millis();
                     return true;
                     
                 case OpType::AGAIN: {
