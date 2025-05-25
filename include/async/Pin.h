@@ -12,13 +12,14 @@ namespace async {
         private:
             int pin;
             int mode;
+            int value;
             int edge;
             Task * task;
             FastList<async::Task*> handlersRising;
             FastList<async::Task*> handlersFalling;
         public:
 
-        Pin(int pin, int mode = INPUT_PULLUP): pin(digitalPinToInterrupt(pin)), mode(mode), edge(edge) {
+        Pin(int pin, int mode = INPUT_PULLUP, int val = HIGH): pin(digitalPinToInterrupt(pin)), mode(mode), edge(edge), value(val) {
             task = new Task(Task::DEMAND, [this]() {
                 if(digitalRead() == HIGH) {
                     for(int i=0; i < this->handlersRising.size(); i++) {
@@ -35,6 +36,11 @@ namespace async {
 
         bool start() override {
             setMode(mode);
+
+            if(mode == OUTPUT) {
+                digitalWrite(value);
+            }
+
             return true;
         }
 
