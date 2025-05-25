@@ -13,14 +13,13 @@ namespace async {
             int pin;
             int mode;
             int value;
-            int edge;
-            Task * task;
+            Task * interruptTask;
             FastList<async::Task*> handlersRising;
             FastList<async::Task*> handlersFalling;
         public:
 
-        Pin(int pin, int mode = INPUT_PULLUP, int val = HIGH): pin(digitalPinToInterrupt(pin)), mode(mode), edge(edge), value(val) {
-            task = new Task(Task::DEMAND, [this]() {
+        Pin(int pin, int mode = INPUT_PULLUP, int val = HIGH): pin(digitalPinToInterrupt(pin)), mode(mode), value(val) {
+            interruptTask = new Task(Task::DEMAND, [this]() {
                 if(digitalRead() == HIGH) {
                     for(int i=0; i < this->handlersRising.size(); i++) {
                         handlersRising.get(i)->demand();
@@ -69,12 +68,8 @@ namespace async {
             }
             else {
                 pinMode(pin, mode);
-                attachInterruptArg(pin, ISR, task, CHANGE);
+                attachInterruptArg(pin, ISR, interruptTask, CHANGE);
             }
-        }
-
-        void setEdge(int edge) {
-            setMode(edge != RISING ? INPUT : INPUT_PULLUP);
         }
 
         int getPin() {
@@ -85,7 +80,7 @@ namespace async {
             this->handlersFalling.append(task);
         }
 
-        Task * onInterrupt(int edge, VoidCallback callback) {
+        void onInterrupt(int edge, VoidCallback callback) {
             auto task = new Task(Task::DEMAND, callback);
 
             if(edge == RISING) {
@@ -95,7 +90,6 @@ namespace async {
                 this->handlersFalling.append(task);
             }
 
-            return task;
         }
 
         void removeInterrupt(Task * task) {
@@ -104,7 +98,16 @@ namespace async {
         }
 
         bool tick() {
-            return task->tick();
+            interruptTask->tick();
+
+            for(int i=0; i < this->handlersRising.size(); i++) {
+                handlersRising.get(i)->tick();
+            }
+            for(int i=0; i < this->handlersFalling.size(); i++) {
+                handlersFalling.get(i)->tick();
+            }
+
+            return true;
         };
     };
 }

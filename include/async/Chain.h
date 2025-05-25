@@ -29,7 +29,6 @@ namespace async {
                 unsigned long timeout;
                 Semaphore * semaphore;
                 Pin * pin;
-                Task * task;
             };
         
             FastList<Operation*> operations;
@@ -109,8 +108,10 @@ namespace async {
                 op->timeout = timeout;
                 op->pin = pin;
 
-                op->task = pin->onInterrupt(edge, [pin, this]() {
+                pin->onInterrupt(edge, [pin, this]() {
+                    //Serial.println("owa");
                     if(pin->getPin() == this->currentInterruptPin) {
+                        //Serial.println("this->currentInterruptPin1");
                         this->interruptTriggered = true;
                     }
                 });
@@ -135,9 +136,9 @@ namespace async {
                 
                 Operation * op = operations.get(currentOpIndex); //[currentOpIndex];
 
-                if(op->type == OpType::INTERR) {
-                    op->task->tick();
-                }
+                // if(op->type == OpType::INTERR) {
+                //     op->task->tick();
+                // }
                 
                 switch (op->type) {
                     case OpType::SEMAPHORE_WAIT:
@@ -217,7 +218,6 @@ namespace async {
             TypedAgainCallback againCallback;
             Semaphore * semaphore;
             Pin * pin;
-            Task * task;
         };
     
         int operationCount;
@@ -314,9 +314,11 @@ namespace async {
             op->timeout = timeout;
             op->pin = pin;
 
-            op->task = pin->onInterrupt(edge, [pin, this]() {;
+            pin->onInterrupt(edge, [pin, this]() {
+                //Serial.println("owa");
                 if(pin->getPin() == this->currentInterruptPin) {
                     this->interruptTriggered = true;
+                        //Serial.println("this->currentInterruptPin2");
                 }
             });
             addOperation(op);
@@ -339,9 +341,9 @@ namespace async {
     
             Operation * op = operations.get(currentOpIndex); //[currentOpIndex];
 
-            if(op->type == OpType::INTERR) {
-                op->task->tick();
-            }
+            // if(op->type == OpType::INTERR) {
+            //     op->task->tick();
+            // }
             
             switch (op->type) {
                 case OpType::SEMAPHORE_WAIT:
