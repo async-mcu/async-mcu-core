@@ -11,22 +11,8 @@ class FileStream : public Stream {
         size_t currentPos;
     
     public:
-        FileStream() : fileSize(0), currentPos(0) {}
+        FileStream(File &file) : fileSize(file.size()), currentPos(0), file(file) {}
     
-        bool open(const char* filename, const char* mode = "r") {
-            file = SPIFFS.open(filename, mode);
-            if (!file) return false;
-            
-            fileSize = file.size();
-            currentPos = 0;
-            return true;
-        }
-    
-        void close() {
-            file.close();
-            fileSize = 0;
-            currentPos = 0;
-        }
     
         int available() override {
             return file.available();
