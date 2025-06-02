@@ -1,27 +1,31 @@
-
+#pragma once
 
 namespace async {
     class Semaphore {
         private:
             int count;
             const int maxCount;
-            bool locked = false;
+            bool lock = false;
         
         public:
             Semaphore(int initialCount, int maximumCount)
                 : count(initialCount), maxCount(maximumCount) {}
         
             bool acquire() {
-                if (count > 0 && !locked) {
+                if (count > 0 && !lock) {
                     count--;
-                    locked = true;
+                    lock = true;
                     return true;
                 }
                 return false;
             }
+
+            bool locked() {
+                return lock;
+            }
         
             void release() {
-                locked = false;
+                lock = false;
                 if (count < maxCount) {
                     count++;
                 }
