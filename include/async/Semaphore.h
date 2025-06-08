@@ -5,7 +5,7 @@ namespace async {
         private:
             int count;
             const int maxCount;
-            bool lock = false;
+            volatile bool lock = false;
         
         public:
             Semaphore(int initialCount, int maximumCount)

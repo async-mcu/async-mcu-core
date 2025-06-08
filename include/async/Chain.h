@@ -36,35 +36,28 @@ namespace async {
             uint8_t currentOpIndex;
             unsigned long delayStart;
             volatile bool interruptTriggered;
-            uint8_t currentInterruptPin;
+            Operation * interruptOperation;
             bool shouldLoop = false;
+            bool cancelled = false;
         
             void addOperation(Operation * op) {
                 operations.append(op);
                 operationCount++;
             }
         
-            void cleanupInterrupt() {
-                if (currentInterruptPin != 255) {
-                    currentInterruptPin = 255;
-                }
-            }
-        
             void resetChain() {
                 currentOpIndex = 0;
                 delayStart = 0;
                 interruptTriggered = false;
-                cleanupInterrupt();
+                interruptOperation = nullptr;
             }
         
         public:
             Chain() : operationCount(0), 
                       currentOpIndex(0), delayStart(0), interruptTriggered(false),
-                      currentInterruptPin(255) {}
+                      interruptOperation(nullptr) {}
         
             ~Chain() {
-                cleanupInterrupt();
-
                 for(int i=0; i < operations.size(); i++) {
                     delete operations[i];
                 }
@@ -108,10 +101,8 @@ namespace async {
                 op->timeout = timeout;
                 op->pin = pin;
 
-                pin->onInterrupt(edge, [pin, this]() {
-                    //Serial.println("owa");
-                    if(pin->getPin() == this->currentInterruptPin) {
-                        //Serial.println("this->currentInterruptPin1");
+                pin->onInterrupt(edge, [this, op]() {
+                    if(this->interruptOperation == op) {
                         this->interruptTriggered = true;
                     }
                 });
@@ -124,8 +115,15 @@ namespace async {
                 shouldLoop = true;
                 return this;
             }
+
+            bool cancel() {
+                cancelled = true;
+                return true;
+            }
         
             bool tick() {
+                if(cancelled) return false;
+
                 if (currentOpIndex >= operations.size()) {
                     if (shouldLoop) {
                         resetChain();
@@ -175,21 +173,20 @@ namespace async {
                         return true;
                         
                     case OpType::INTERR:
-                        if (currentInterruptPin == 255) {
-                            currentInterruptPin = op->pin->getPin();
+                        if(this->interruptOperation == nullptr) {
+                            interruptOperation = op;
                             interruptTriggered = false;
-
                             delayStart = millis();
                         }
                         
                         if (interruptTriggered) {
-                            cleanupInterrupt();
+                            this->interruptOperation = nullptr;
                             currentOpIndex++;
                             return true;
                         }
                         
                         if (millis() - delayStart >= op->timeout) {
-                            cleanupInterrupt();
+                            this->interruptOperation = nullptr;
                             currentOpIndex++;
                             return true;
                         }
@@ -224,12 +221,13 @@ namespace async {
         int operationCapacity;
         int currentOpIndex;
         unsigned long delayStart;
-        volatile bool interruptTriggered;
-        uint8_t currentInterruptPin;
+        Operation * interruptOperation;
+        bool interruptTriggered;
         bool shouldLoop = false;
         bool cycleExitFlag = false;
         T value;
         FastList<Operation *> operations;
+        bool cancelled = false;
     
         void addOperation(Operation * op) {
             operations.append(op);
@@ -239,22 +237,13 @@ namespace async {
         void resetChain() {
             currentOpIndex = 0;
             delayStart = 0;
-            interruptTriggered = false;
-        }
-        
-        void cleanupInterrupt() {
-            if (currentInterruptPin != 255) {
-                currentInterruptPin = 255;
-            }
+            interruptOperation = nullptr;
         }
     public:
         Chain(T value) : operationCount(0), operationCapacity(0),
-                  currentOpIndex(0), delayStart(0), interruptTriggered(false),
-                  currentInterruptPin(255), value(value) {}
+                  currentOpIndex(0), delayStart(0), interruptTriggered(false), value(value), interruptOperation(nullptr) {}
     
         ~Chain() {
-            cleanupInterrupt();
-
             for(int i=0; i < operations.size(); i++) {
                 delete operations[i];
             }
@@ -314,11 +303,9 @@ namespace async {
             op->timeout = timeout;
             op->pin = pin;
 
-            pin->onInterrupt(edge, [pin, this]() {
-                //Serial.println("owa");
-                if(pin->getPin() == this->currentInterruptPin) {
+            pin->onInterrupt(edge, [this, op]() {
+                if(this->interruptOperation == op) {
                     this->interruptTriggered = true;
-                        //Serial.println("this->currentInterruptPin2");
                 }
             });
             addOperation(op);
@@ -329,8 +316,15 @@ namespace async {
             shouldLoop = true;
             return this;
         }
+
+        bool cancel() {
+            cancelled = true;
+            return true;
+        }
     
         bool tick() {
+            if(cancelled) return false;
+
             if (currentOpIndex >= operationCount) {
                 if (shouldLoop) {
                     resetChain();
@@ -404,21 +398,20 @@ namespace async {
                 }
                     
                 case OpType::INTERR:
-                    if (currentInterruptPin == 255) {
-                        currentInterruptPin = op->pin->getPin();
+                    if(this->interruptOperation == nullptr) {
+                        interruptOperation = op;
                         interruptTriggered = false;
-
                         delayStart = millis();
                     }
                     
                     if (interruptTriggered) {
-                        cleanupInterrupt();
+                        this->interruptOperation = nullptr;
                         currentOpIndex++;
                         return true;
                     }
                     
                     if (millis() - delayStart >= op->timeout) {
-                        cleanupInterrupt();
+                        this->interruptOperation = nullptr;
                         currentOpIndex++;
                         return true;
                     }

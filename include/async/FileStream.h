@@ -35,14 +35,11 @@ class FileStream : public Stream {
         }
     
         bool seek(size_t pos) override {
-            if (pos > fileSize) return false;
-            bool result = file.seek(pos);
-            if (result) currentPos = pos;
-            return result;
+            return file.seek(pos);
         }
     
         size_t position() const override {
-            return currentPos;
+            return file.position();
         }
     
         size_t size() const override {
