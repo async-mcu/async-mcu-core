@@ -50,9 +50,20 @@ namespace async {
 
             ::digitalWrite(pin, state);
         }
+        void analogWrite(bool state) {
+            if(mode != OUTPUT) {
+                setMode(OUTPUT);
+            }
+
+            ::analogWrite(pin, state);
+        }
 
         int digitalRead() {
             return ::digitalRead(pin);
+        }
+
+        int analogRead() {
+            return ::analogRead(pin);
         }
 
         int getMode() {
