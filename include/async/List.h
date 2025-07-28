@@ -1,5 +1,6 @@
 #pragma once
 
+// to del -> use vector
 namespace async { 
     template <typename T>
     class List {
