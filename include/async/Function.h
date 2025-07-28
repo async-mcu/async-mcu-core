@@ -1,5 +1,6 @@
 #pragma once
 
+// to del -> functional
 // Базовый абстрактный класс для стирания типа
 template<typename Result, typename... Args>
 struct AbstractFunction {
