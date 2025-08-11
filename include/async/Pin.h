@@ -50,6 +50,7 @@ namespace async {
 
             ::digitalWrite(pin, state);
         }
+        
         void analogWrite(int state) {
             if(mode != OUTPUT) {
                 setMode(OUTPUT);
