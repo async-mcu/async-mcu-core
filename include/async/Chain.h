@@ -3,14 +3,9 @@
 #include <async/Tick.h>
 #include <async/Task.h>
 #include <async/Executor.h>
-#include <async/Function.h>
-#include <async/FastList.h>
 #include <async/Pin.h>
 #include <async/Callbacks.h>
 #include <async/Semaphore.h>
-
-//template void attachInterruptArg<void*>(uint8_t&, void (&)(void*), async::Chain<void>*, int&);
-//template void attachInterruptArg<int>(uint8_t, void (*)(int), int, int);
 
 namespace async {
     template<typename T = void>
@@ -31,7 +26,7 @@ namespace async {
                 Pin * pin;
             };
         
-            FastList<Operation*> operations;
+            std::vector<Operation*> operations;
             uint8_t operationCount;
             uint8_t currentOpIndex;
             unsigned long delayStart;
@@ -41,7 +36,7 @@ namespace async {
             bool cancelled = false;
         
             void addOperation(Operation * op) {
-                operations.append(op);
+                operations.push_back(op);
                 operationCount++;
             }
         
@@ -132,7 +127,7 @@ namespace async {
                     return false;
                 }
                 
-                Operation * op = operations.get(currentOpIndex); //[currentOpIndex];
+                Operation * op = operations.at(currentOpIndex); //[currentOpIndex];
 
                 // if(op->type == OpType::INTERR) {
                 //     op->task->tick();
@@ -140,7 +135,7 @@ namespace async {
                 
                 switch (op->type) {
                     case OpType::SEMAPHORE_WAIT:
-                        if (!op->semaphore->acquire()) {
+                        if (!op->semaphore->tryAcquire()) {
                             return true; // Продолжаем ждать
                         }
                         currentOpIndex++;
@@ -148,7 +143,7 @@ namespace async {
                         return true;
 
                     case OpType::SEMAPHORE_SKIP:
-                        if (!op->semaphore->acquire()) {
+                        if (!op->semaphore->tryAcquire()) {
                             currentOpIndex = operations.size();
                             return true; // завершаем программу
                         }
@@ -201,8 +196,8 @@ namespace async {
     // Шаблонная версия для типизированных цепочек
     template<typename T>
     class Chain : public Tick {
-        typedef Function<T(T)> TypedCallback;
-        typedef Function<bool(T)> TypedAgainCallback;
+        typedef std::function<T(T)> TypedCallback;
+        typedef std::function<bool(T)> TypedAgainCallback;
 
         private:
         enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP, CYCLE, AGAIN };
@@ -226,11 +221,11 @@ namespace async {
         bool shouldLoop = false;
         bool cycleExitFlag = false;
         T value;
-        FastList<Operation *> operations;
+        std::vector<Operation *> operations;
         bool cancelled = false;
     
         void addOperation(Operation * op) {
-            operations.append(op);
+            operations.push_back(op);
             operationCount++;
         }
     
@@ -333,7 +328,7 @@ namespace async {
                 return false;
             }
     
-            Operation * op = operations.get(currentOpIndex); //[currentOpIndex];
+            Operation * op = operations.at(currentOpIndex); //[currentOpIndex];
 
             // if(op->type == OpType::INTERR) {
             //     op->task->tick();

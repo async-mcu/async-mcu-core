@@ -1,6 +1,6 @@
 #pragma once
 #include <async/Stream.h>
-#include <SPIFFS.h>
+#include <FS.h>
 
 namespace async {
 // Поток для работы с файлами

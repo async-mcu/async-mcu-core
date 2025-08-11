@@ -1,8 +1,8 @@
 #pragma once
 #include <async/Task.h>
 #include <async/Tick.h>
-#include <async/FastList.h>
 #include <async/Callbacks.h>
+#include <vector>
 
 namespace async { 
     /**
@@ -18,7 +18,7 @@ namespace async {
      */
     class Executor : public Tick {
         private:
-            FastList<Tick*> list; ///< List of managed Tick objects
+            std::vector<Tick*> list; ///< List of managed Tick objects
             bool begin = false;
 
         public:
@@ -36,7 +36,7 @@ namespace async {
              * @note The executor takes ownership of the Tick object's lifecycle
              */
             void add(Tick * tick) {
-                list.append(tick);
+                list.push_back(tick);
 
                 if(this->begin) {
                     tick->start();
@@ -54,7 +54,7 @@ namespace async {
              * @note The executor will call cancel() on the Tick object upon removal
              */
             void remove(Tick * tick) {
-                list.remove(tick);
+                list.erase(std::remove(this->list.begin(), this->list.end(), tick));
                 tick->cancel();
                 delete tick;
             }
@@ -68,7 +68,7 @@ namespace async {
              */
             bool tick() {
                 for(int i=0, size=list.size(); i < size; i++) {
-                    Tick * tick = list.get(i);
+                    Tick * tick = list.at(i);
 
                     if(!tick->tick()) {
                         remove(tick);

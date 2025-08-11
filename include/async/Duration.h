@@ -1,20 +1,6 @@
 #pragma once
 #include <Arduino.h>
 
-#ifdef ARDUINO_ARCH_ESP32
-/**
- * @brief Get 64-bit millisecond counter (ESP32 specific implementation)
- * @return Current time in milliseconds since boot
- */
-#define millis64() (esp_timer_get_time() / 1000u)
-#else
-/**
- * @brief Get 64-bit millisecond counter (generic implementation)
- * @return Current time in milliseconds since boot
- */
-uint64_t millis64();
-#endif
-
 /**
  * @class Duration
  * @brief Represents a time duration with conversions between units (microseconds to hours)
@@ -138,7 +124,7 @@ namespace async {
              * @note The caller is responsible for managing the returned pointer
              */
             static Duration now() {
-                return Duration(millis64());
+                return Duration(millis());
             };
 
             static Duration maximum() {

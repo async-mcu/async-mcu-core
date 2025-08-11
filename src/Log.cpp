@@ -10,20 +10,12 @@ void log(int level, const char *format, const char * file, ...) {
     char buf[512];
     char new_format[256];
 
-    #ifdef ARDUINO_ARCH_ESP32
-        sprintf(new_format, "%s [%s\t%d][%s] %s", 
+    sprintf(new_format, "%s [%s\t%d][%s] %s", 
             async::Time::getSystem().toString().c_str(), 
             file, 
             xPortGetCoreID(), 
             level == 0 ? "T" : level == 1 ? "D" : level == 2 ? "I" : level == 3 ? "W" : "E", 
             format);
-    #else
-        sprintf(new_format, "%s [%s][%s] %s", 
-            async::Time::getSystem().toString().c_str(), 
-            file, 
-            level == 0 ? "T" : level == 1 ? "D" : level == 2 ? "I" : level == 3 ? "W" : "E", 
-            format);
-    #endif
 
     vsnprintf(buf, 512, new_format, args);
     Serial.println(buf);

@@ -2,7 +2,6 @@
 #include <async/Tick.h>
 #include <async/Time.h>
 #include <async/Duration.h>
-#include <async/LinkedList.h>
 #include <async/Callbacks.h>
 
 /**
@@ -111,7 +110,7 @@ namespace async {
             Task(const int type, Duration * duration, VoidCallback callback) {
                 this->type = type;
                 this->duration = duration;
-                this->from = new Duration(millis64());
+                this->from = new Duration(millis());
                 this->callback = callback;
             }
             
@@ -172,7 +171,7 @@ namespace async {
              * @return Always returns true
              */
             bool reset() {
-                this->from->set(millis64());
+                this->from->set(millis());
                 return true;
             }
             ///@}
@@ -196,7 +195,7 @@ namespace async {
                         this->callback();
                         this->pause();
                     }
-                    else if(millis64() - this->from->get() > this->duration->get() && 
+                    else if(millis() - this->from->get() > this->duration->get() && 
                            (this->type == Task::DELAY || this->type == Task::REPEAT)) {
                         this->callback();
 

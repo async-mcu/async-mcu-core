@@ -184,7 +184,7 @@ namespace async {
        * @return uint64_t Milliseconds since Unix epoch (1970-01-01)
        */
       uint64_t getTimestamp() {
-        return millis64() + this->valueMillis;
+        return millis() + this->valueMillis;
       }
 
       /**
@@ -300,7 +300,7 @@ namespace async {
        * @note Caller is responsible for memory management
        */
       static Time * now() {
-        return new Time(millis64());
+        return new Time(millis());
       };
 
       /**
