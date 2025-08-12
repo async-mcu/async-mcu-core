@@ -23,9 +23,8 @@ namespace async {
             int pin; ///< Pin number or interrupt number.
             int mode; ///< Pin mode (INPUT, OUTPUT, etc).
             int value; ///< Last written value.
-            Task * interruptTask; ///< Task triggered by pin interrupt.
-            std::vector<async::Task*> handlersRising; ///< Tasks for rising edge.
-            std::vector<async::Task*> handlersFalling; ///< Tasks for falling edge.
+            DemandTask<bool> * interruptTask; ///< Task triggered by pin interrupt.
+            std::vector<async::DemandTask<bool>*> handlers; ///< Tasks for rising edge.
         public:
 
         /**
@@ -35,16 +34,9 @@ namespace async {
          * @param val Initial value (default HIGH).
          */
         Pin(int pin, int mode = INPUT_PULLUP, int val = HIGH): pin(digitalPinToInterrupt(pin)), mode(mode), value(val) {
-            interruptTask = new Task(Task::DEMAND, [this]() {
-                if(digitalRead() == HIGH) {
-                    for(int i=0; i < this->handlersRising.size(); i++) {
-                        handlersRising.at(i)->demand();
-                    }
-                }
-                else {
-                    for(int i=0; i < this->handlersFalling.size(); i++) {
-                        handlersFalling.at(i)->demand();
-                    }
+            interruptTask = new DemandTask<bool>([this](bool value) { // true - high
+                for(int i=0; i < this->handlers.size(); i++) {
+                    handlers.at(i)->demand(value);
                 }
             });
         };
@@ -135,39 +127,22 @@ namespace async {
         int getPin() {
             return pin;
         }
-        
-        /**
-         * @brief Get the last written value to the pin.
-         * @return int Last value written.
-         */
-        void addTask(Task * task) {
-            this->handlersFalling.push_back(task);
-        }
 
         /**
          * @brief Register a callback for pin interrupts.
          * @param edge RISING or FALLING.
          * @param callback Function to call.
          */
-        void onInterrupt(int edge, VoidCallback callback) {
-            auto task = new Task(Task::DEMAND, callback);
-
-            if(edge == RISING) {
-                this->handlersRising.push_back(task);
-            }
-            else {
-                this->handlersFalling.push_back(task);
-            }
-
+        void onInterrupt(DemandTask<bool> * task) {
+            this->handlers.push_back(task);
         }
 
         /**
          * @brief Remove a registered interrupt task.
          * @param task Pointer to Task.
          */ 
-        void removeInterrupt(Task * task) {
-            this->handlersRising.erase(std::remove(this->handlersRising.begin(), this->handlersRising.end(), task));
-            this->handlersFalling.erase(std::remove(this->handlersRising.begin(), this->handlersRising.end(), task));
+        void removeInterrupt(DemandTask<bool> * task) {
+            this->handlers.erase(std::remove(this->handlers.begin(), this->handlers.end(), task));
         }
 
         /**
@@ -177,11 +152,8 @@ namespace async {
         bool tick() {
             interruptTask->tick();
 
-            for(int i=0; i < this->handlersRising.size(); i++) {
-                handlersRising.at(i)->tick();
-            }
-            for(int i=0; i < this->handlersFalling.size(); i++) {
-                handlersFalling.at(i)->tick();
+            for(int i=0; i < this->handlers.size(); i++) {
+                handlers.at(i)->tick();
             }
 
             return true;

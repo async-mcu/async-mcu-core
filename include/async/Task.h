@@ -3,216 +3,250 @@
 #include <async/Time.h>
 #include <async/Duration.h>
 #include <async/Callbacks.h>
+#include <esp_timer.h>
 
 /**
- * @class Task
- * @brief Task management class for scheduling and controlling asynchronous operations
- * 
- * @details The Task class provides functionality to create and manage different types
- * of timed or event-driven tasks. It supports various task types including repeating,
- * delayed, and demand-based tasks. Tasks can be paused, resumed, canceled, or reset.
+ * @file Task.h
+ * @brief Defines task classes for scheduling and controlling asynchronous operations.
  */
-namespace async { 
-    class Task : public Tick {
-        private:
-            int type;           ///< Task type (REPEAT, DELAY, etc.)
-            volatile int state;          ///< Current state (PAUSE, RUN, CANCEL)
-            int pin;
-            Duration * duration;///< Duration for timed tasks
-            Duration * from;    ///< Timestamp when task started or was last reset
-            VoidCallback callback; ///< Callback function to execute
+
+namespace async {
+
+    enum TaskState {
+        CREATE = 0, ///< Object created
+        RUN    = 1, ///< Object started
+        CANCEL = 2, ///< Object canceled
+        PAUSE  = 3  ///< Object paused
+    };
+
+    /**
+     * @class DemandTask
+     * @brief Task triggered on demand, supports typed parameter and result in callback.
+     *
+     * ### Example: DemandTask with int parameter
+     * ```cpp
+     * auto demand1 = new DemandTask<int>([](int result) {
+     *     Serial.println(result); // Prints 123
+     * });
+     * demand1->start();
+     * demand1->demand(123);
+     * ```
+     *
+     * ### Example: DemandTask with no parameter
+     * ```cpp
+     * auto demand2 = new DemandTask<>([] () {
+     *     Serial.println("No param demand!");
+     * });
+     * demand2->start();
+     * demand2->demand();
+     * ```
+     */
+    template<typename ParamT = void>
+    class DemandTask : public Tick {
+        protected:
+            volatile TaskState state;
+            std::function<void(ParamT)> callback;
+            ParamT param;
 
         public:
-            ///@name Task Type Constants
-            ///@{
-            static int const REPEAT = 0;      ///< Repeating task type
-            static int const DELAY = 1;       ///< One-time delayed task type
-            static int const DELAY_REPEAT = 2;///< Delayed repeating task type (unused)
-            static int const TICK = 3;        ///< Execute every tick task type
-            static int const DEMAND = 4;      ///< Demand-based task type
-            static int const INTERR = 4;      ///< Demand-based task type
-            ///@}
+            DemandTask(std::function<void(ParamT)> cb) : state(CREATE), callback(cb), param() {}
 
-            ///@name Task State Constants
-            ///@{
-            static int const PAUSE = 0;  ///< Task is paused
-            static int const RUN = 1;    ///< Task is running
-            static int const CANCEL = 2; ///< Task is canceled
-            //static LinkedList<async::Task*> handlers[];
-            ///@}
+            void attach(Executor * executor) {
+                executor->add(this);
+            }
+            bool start() override { state = RUN; return true; }
+            bool pause() override { state = PAUSE; return true; }
+            bool resume() override { state = RUN; return true; }
+            bool cancel() override { state = CANCEL; return true; }
 
             /**
-             * @brief Destructor
+             * @brief Demand execution with parameter
+             * @param value Parameter for callback
              */
-            ~Task() {
-                //Serial.println("~Task");
-                //detachInterrupt(digitalPinToInterrupt(pin));
-                //int val = digitalPinToInterrupt(pin);
-                //handlers[val].remove(this);
-
-                if(from != nullptr) {
-                    delete from;
+            void demand(ParamT value) {
+                param = value;
+                if (state == RUN && callback) {
+                    callback(param);
+                    state = PAUSE;
                 }
             }
 
-            /**
-             * @brief Construct a demand-based Task
-             * @param type Must be DEMAND or TICK
-             * @param callback Function to execute when demanded
-             */
-            Task(const int type, VoidCallback callback) {
-                this->type = type;
-                this->state = PAUSE;
-                this->callback = callback;
-            }
+            void setParam(const ParamT& value) { param = value; }
+            ParamT getParam() const { return param; }
+            bool tick() override { return state != CANCEL; }
+        };
+
+        // Specialization for void parameter
+        template<>
+        class DemandTask<void> : public Tick {
+        protected:
+            volatile TaskState state;
+            std::function<void()> callback;
+
+        public:
+            DemandTask(std::function<void()> cb) : state(CREATE), callback(cb) {}
+
+            bool start() override { state = RUN; return true; }
+            bool pause() override { state = PAUSE; return true; }
+            bool resume() override { state = RUN; return true; }
+            bool cancel() override { state = CANCEL; return true; }
 
             /**
-             * @brief Construct a interrupt Task
-             * @param type Must be DEMAND
-             * @param callback Function to execute when demanded
+             * @brief Demand execution without parameter
              */
-            // Task(const int pin, const int mode, voidCallback callback) {
-            //     this->type = DEMAND;
-            //     this->state = PAUSE;
-            //     this->callback = callback;
-            //     this->pin = pin;
-
-            //     if(mode == RISING) {
-            //         pinMode(pin, INPUT);
-            //     }
-            //     else if(mode == FALLING) {
-            //         pinMode(pin, INPUT_PULLUP);
-            //     }
-
-            //     int val = digitalPinToInterrupt(pin);
-
-            //     #ifndef ARDUINO_ARCH_ESP32
-            //         Serial.println(val);
-
-            //         if(handlers[val].size() == 0) {
-            //             Serial.println("attachInterrupt");
-            //             attachInterrupt(val, val == 23 ? ISR0 : ISR1, mode);
-            //         }
-
-            //         handlers[val].append(this);
-            //     #else
-            //         Serial.println(val);
-            //         attachInterruptArg(val, ISR, &val, mode);
-            //     #endif
-            // }
-
-            /**
-             * @brief Construct a timed Task
-             * @param type Task type (REPEAT, DELAY, etc.)
-             * @param duration Pointer to Duration object for task timing
-             * @param callback Function to execute when task triggers
-             */
-            Task(const int type, Duration * duration, VoidCallback callback) {
-                this->type = type;
-                this->duration = duration;
-                this->from = new Duration(millis());
-                this->callback = callback;
-            }
-            
-            ///@name Task Control Methods
-            ///@{
-            
-            /**
-             * @brief Start a timed task
-             * @return true
-             */
-            bool start() {
-                if(this->type != DEMAND) {
-                    this->state = RUN;
+            void demand() {
+                if (state == RUN && callback) {
+                    callback();
+                    state = PAUSE;
                 }
-
-                return true;
             }
 
-            /**
-             * @brief Pause the task
-             * @return Always returns true
-             */
-            bool pause() {
-                this->state = PAUSE;
-                return true;
+            bool tick() override { return state != CANCEL; }
+    };
+
+    /**
+     * @class TickTask
+     * @brief Task executed every tick
+     */
+    class TickTask : public Tick {
+    protected:
+        volatile TaskState state;
+        VoidCallback callback;
+
+    public:
+        TickTask(VoidCallback cb) : state(CREATE), callback(cb) {}
+
+        bool start() override { state = RUN; return true; }
+        bool pause() override { state = PAUSE; return true; }
+        bool resume() override { state = RUN; return true; }
+        bool cancel() override { state = CANCEL; return true; }
+
+        bool tick() override {
+            if (state == RUN) callback();
+            return state != CANCEL;
+        }
+    };
+
+    /**
+     * @class DelayTask
+     * @brief One-time delayed task using esp_timer
+     */
+    class DelayTask : public Tick {
+    protected:
+        volatile TaskState state;
+        Duration* duration;
+        VoidCallback callback;
+        esp_timer_handle_t timer;
+
+        static void timerCallback(void* arg) {
+            DelayTask* self = static_cast<DelayTask*>(arg);
+            if (self->state == RUN && self->callback) {
+                self->callback();
+                self->state = CANCEL;
             }
+        }
 
-            /**
-             * @brief Resume a paused task
-             * @return Always returns true
-             */
-            bool resume() {
-                this->state = RUN;
-                return true;
+    public:
+        DelayTask(Duration* dur, VoidCallback cb) : state(CREATE), duration(dur), callback(cb), timer(nullptr) {}
+
+        bool start() override {
+            if (state == CREATE || state == PAUSE) {
+                esp_timer_create_args_t args = {
+                    .callback = &DelayTask::timerCallback,
+                    .arg = this,
+                    .dispatch_method = ESP_TIMER_TASK,
+                    .name = "D" // DelayTask
+                };
+                esp_timer_create(&args, &timer);
+                esp_timer_start_once(timer, duration->get(Duration::MICRO));
+                state = RUN;
             }
+            return true;
+        }
 
-            /**
-             * @brief Cancel the task
-             * @return Always returns true
-             */
-            bool cancel() {
-                this->state = CANCEL;
-                return true;
+        bool pause() override {
+            if (timer) esp_timer_stop(timer);
+            state = PAUSE;
+            return true;
+        }
+
+        bool resume() override {
+            if (timer) esp_timer_start_once(timer, duration->get(Duration::MICRO));
+            state = RUN;
+            return true;
+        }
+
+        bool cancel() override {
+            if (timer) {
+                esp_timer_stop(timer);
+                esp_timer_delete(timer);
+                timer = nullptr;
             }
+            state = CANCEL;
+            return true;
+        }
 
-            /**
-             * @brief Trigger a DEMAND task
-             * @return Always returns true
-             */
-            bool demand() {
-                //Serial.println("demand");
-                this->state = RUN;
-                return true;
+        bool tick() override { return state != CANCEL; }
+    };
+
+    /**
+     * @class RepeatTask
+     * @brief Repeating task using esp_timer
+     */
+    class RepeatTask : public Tick {
+    protected:
+        volatile TaskState state;
+        Duration* duration;
+        VoidCallback callback;
+        esp_timer_handle_t timer;
+
+        static void timerCallback(void* arg) {
+            RepeatTask* self = static_cast<RepeatTask*>(arg);
+            if (self->state == RUN && self->callback) {
+                self->callback();
             }
+        }
 
-            /**
-             * @brief Reset the task timer
-             * @return Always returns true
-             */
-            bool reset() {
-                this->from->set(millis());
-                return true;
+    public:
+        RepeatTask(Duration* dur, VoidCallback cb) : state(CREATE), duration(dur), callback(cb), timer(nullptr) {}
+
+        bool start() override {
+            if (state == CREATE || state == PAUSE) {
+                esp_timer_create_args_t args = {
+                    .callback = &RepeatTask::timerCallback,
+                    .arg = this,
+                    .dispatch_method = ESP_TIMER_TASK,
+                    .name = "R" // RepeatTask
+                };
+                esp_timer_create(&args, &timer);
+                esp_timer_start_periodic(timer, duration->get(Duration::MICRO));
+                state = RUN;
             }
-            ///@}
+            return true;
+        }
 
-            /**
-             * @brief Execute task tick logic
-             * @return true if task should continue, false if task should be removed
-             * 
-             * @details Handles task execution based on type and state:
-             * - TICK tasks execute every call
-             * - DEMAND tasks execute once then pause
-             * - TIMED tasks check duration before executing
-             * - REPEAT tasks auto-reset after execution
-             */
-            bool tick() {
-                if(this->state == Task::RUN) {
-                    if(this->type == Task::TICK) {
-                        this->callback();
-                    }
-                    else if(this->type == Task::DEMAND) {
-                        this->callback();
-                        this->pause();
-                    }
-                    else if(millis() - this->from->get() > this->duration->get() && 
-                           (this->type == Task::DELAY || this->type == Task::REPEAT)) {
-                        this->callback();
+        bool pause() override {
+            if (timer) esp_timer_stop(timer);
+            state = PAUSE;
+            return true;
+        }
 
-                        if(this->type == Task::REPEAT) {
-                            this->reset();
-                        }
-                        else {
-                            this->cancel();
-                            return false;
-                        }
-                    }
-                }
-                else if(this->state == Task::CANCEL) {
-                    return false;
-                }
+        bool resume() override {
+            if (timer) esp_timer_start_periodic(timer, duration->get(Duration::MICRO));
+            state = RUN;
+            return true;
+        }
 
-                return true;
+        bool cancel() override {
+            if (timer) {
+                esp_timer_stop(timer);
+                esp_timer_delete(timer);
+                timer = nullptr;
             }
+            state = CANCEL;
+            return true;
+        }
+
+        bool tick() override { return state != CANCEL; }
     };
 }

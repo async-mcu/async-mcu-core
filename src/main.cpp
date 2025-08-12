@@ -5,7 +5,7 @@
 
 using namespace async;
 
-Executor executor;
+Executor core1;
 Pin pin(23, INPUT_PULLUP);
 
 Setting<int> val("name", 0x0000, 10);
@@ -13,23 +13,17 @@ Setting<int> val("name", 0x0000, 10);
 void setup() {
   Serial.begin(115200);
   Serial.println("setup");
-  executor.start();
 
-  val.onChange([](int current, int last) {
-    info("set val from %d to %d", last, current);
+  core1.start();
+
+  auto delay = new DelayTask(1000, []() {
+    info("Delay task executed");
   });
 
-  executor.onDelay(1000, [] () {
-    info("set");
-    val.getAndSet([](int value) {
-      info("set 12 %d", value);
-      return value + 10;
-    });
-  });
 }
 
 void loop() {
-  executor.tick();
+  core1.loop();
 }
 
 // Boot zBoot([](Executor * executor) {

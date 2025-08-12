@@ -96,11 +96,11 @@ namespace async {
                 op->timeout = timeout;
                 op->pin = pin;
 
-                pin->onInterrupt(edge, [this, op]() {
-                    if(this->interruptOperation == op) {
+                pin->onInterrupt(new DemandTask<bool>([this, op, edge](bool val) {
+                    if(edge == val && this->interruptOperation == op) {
                         this->interruptTriggered = true;
                     }
-                });
+                }));
 
                 addOperation(op);
                 return this;
@@ -298,11 +298,11 @@ namespace async {
             op->timeout = timeout;
             op->pin = pin;
 
-            pin->onInterrupt(edge, [this, op]() {
-                if(this->interruptOperation == op) {
+            pin->onInterrupt(new DemandTask([this, op, edge](bool val) {
+                if(edge == val && this->interruptOperation == op) {
                     this->interruptTriggered = true;
                 }
-            });
+            }));
             addOperation(op);
             return this;
         }
@@ -328,11 +328,7 @@ namespace async {
                 return false;
             }
     
-            Operation * op = operations.at(currentOpIndex); //[currentOpIndex];
-
-            // if(op->type == OpType::INTERR) {
-            //     op->task->tick();
-            // }
+            Operation * op = operations.at(currentOpIndex);
             
             switch (op->type) {
                 case OpType::SEMAPHORE_WAIT:

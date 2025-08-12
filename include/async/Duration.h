@@ -7,168 +7,333 @@
  * 
  * @details The Duration class provides a comprehensive way to work with time intervals in various units.
  * It supports creation, storage, manipulation, and comparison of durations with microsecond precision
- * (stored internally as milliseconds). The class is particularly useful for timing operations in
+ * (stored internally as microseconds). The class is particularly useful for timing operations in
  * asynchronous tasks and event scheduling.
  * 
  * @note All arithmetic operations return new Duration objects rather than modifying existing ones.
  */
-namespace async { 
+namespace async {
+
     class Duration {
-        protected:
-            uint64_t valueMillis; ///< Internal storage in milliseconds (64-bit for extended range)
+    protected:
+        uint64_t valueMicros; ///< Internal storage in microseconds (64-bit for extended range)
 
-        public:
-            /**
-             * @brief Destructor
-             */
-            ~Duration() {}
-            
-            /**
-             * @brief Construct a new Duration object
-             * @param ms Duration value in milliseconds
-             */
-            Duration(uint64_t ms) {
-                valueMillis = ms;
+    public:
+        /**
+         * @brief Destructor
+         *
+         * ### Example
+         * ```cpp
+         * Duration* d = new Duration(1000);
+         * delete d;
+         * ```
+         */
+        ~Duration() {}
+
+        /**
+         * @brief Construct a new Duration object
+         * @param us Duration value in microseconds
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(1000); // 1000 microseconds
+         * Duration d2 = Duration::ms(1); // 1 millisecond = 1000 microseconds
+         * ```
+         */
+        Duration(uint64_t us) {
+            valueMicros = us;
+        }
+
+        ///@name Time Unit Constants
+        ///@{
+        static const byte MICRO   = 0;   ///< Microseconds (μs) unit identifier
+        static const byte MILLIS  = 1;   ///< Milliseconds (ms) unit identifier
+        static const byte SECONDS = 2;   ///< Seconds (s) unit identifier
+        static const byte MINUTES = 3;   ///< Minutes (min) unit identifier
+        static const byte HOURS   = 4;   ///< Hours (hr) unit identifier
+        ///@}
+
+        /**
+         * @brief Set duration value
+         * @param us New duration value in microseconds
+         *
+         * ### Example
+         * ```cpp
+         * Duration d(0);
+         * d.set(5000); // Set to 5000 microseconds
+         * ```
+         */
+        void set(uint64_t us) {
+            this->valueMicros = us;
+        }
+
+        /**
+         * @brief Calculate the absolute difference between two Duration objects
+         * @param other The Duration to compare with
+         * @return Duration New Duration object representing the absolute difference
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(10000);
+         * Duration d2(7000);
+         * Duration diff = d1.diff(d2); // diff = 3000 microseconds
+         * ```
+         */
+        Duration diff(const Duration& other) const {
+            return Duration(valueMicros > other.valueMicros ? valueMicros - other.valueMicros : other.valueMicros - valueMicros);
+        }
+
+        /**
+         * @brief Add another Duration to this one
+         * @param other The Duration to add
+         * @return Duration New Duration object representing the sum
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(1000);
+         * Duration d2(2000);
+         * Duration sum = d1.add(d2); // sum = 3000 microseconds
+         * ```
+         */
+        Duration add(const Duration& other) const {
+            return Duration(valueMicros + other.valueMicros);
+        }
+
+        /**
+         * @brief Subtract another Duration from this one
+         * @param other The Duration to subtract
+         * @return Duration New Duration object representing the difference
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(5000);
+         * Duration d2(2000);
+         * Duration diff = d1.subtract(d2); // diff = 3000 microseconds
+         * ```
+         */
+        Duration subtract(const Duration& other) const {
+            return Duration(valueMicros > other.valueMicros ? valueMicros - other.valueMicros : 0);
+        }
+
+        /**
+         * @brief Check if this Duration represents a later time than another
+         * @param other The Duration to compare with
+         * @return bool True if this Duration is after the other, false otherwise
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(10000);
+         * Duration d2(5000);
+         * bool isAfter = d1.after(d2); // true
+         * ```
+         */
+        bool after(const Duration& other) const {
+            return valueMicros > other.valueMicros;
+        }
+
+        /**
+         * @brief Check if this Duration represents an earlier time than another
+         * @param other The Duration to compare with
+         * @return bool True if this Duration is before the other, false otherwise
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(1000);
+         * Duration d2(5000);
+         * bool isBefore = d1.before(d2); // true
+         * ```
+         */
+        bool before(const Duration& other) const {
+            return valueMicros < other.valueMicros;
+        }
+
+        /**
+         * @brief Get the duration in the specified time unit
+         * @param type Time unit constant (MICRO, MILLIS, SECONDS, etc.)
+         * @return uint64_t Duration value converted to the requested unit
+         *
+         * ### Example
+         * ```cpp
+         * Duration d(1234567);
+         * uint64_t ms = d.get(Duration::MILLIS); // 1234 ms
+         * uint64_t sec = d.get(Duration::SECONDS); // 1 sec
+         * ```
+         */
+        uint64_t get(int type = MICRO) {
+            switch(type) {
+                case MICRO:   return valueMicros;
+                case MILLIS:  return valueMicros / 1000L;
+                case SECONDS: return valueMicros / 1000000L;
+                case MINUTES: return valueMicros / (1000000L * 60);
+                case HOURS:   return valueMicros / (1000000L * 3600);
+                default:      return valueMicros;
             }
+        };
 
-            ///@name Time Unit Constants
-            ///@{
-            static const byte MICRO   = 0;   ///< Microseconds (μs) unit identifier
-            static const byte MILLIS  = 1;   ///< Milliseconds (ms) unit identifier
-            static const byte SECONDS = 2;   ///< Seconds (s) unit identifier
-            static const byte MINUTES = 3;   ///< Minutes (min) unit identifier
-            static const byte HOURS   = 4;   ///< Hours (hr) unit identifier
-            ///@}
+        ///@name Factory Methods
+        ///@{
 
-            /**
-             * @brief Set duration value
-             * @param ms New duration value in milliseconds
-             */
-            void set(uint64_t ms) {
-                this->valueMillis = ms;
+        /**
+         * @brief Get current time as a Duration object (microseconds)
+         * @return Duration New Duration object representing current time
+         *
+         * ### Example
+         * ```cpp
+         * Duration now = Duration::now();
+         * Serial.println(now.get());
+         * ```
+         */
+        static Duration now() {
+            return Duration(micros());
+        };
+
+        /**
+         * @brief Get maximum possible Duration
+         * @return Duration New Duration object representing maximum value
+         *
+         * ### Example
+         * ```cpp
+         * Duration maxDur = Duration::maximum();
+         * ```
+         */
+        static Duration maximum() {
+            return Duration((uint64_t)-1);
+        };
+
+        /**
+         * @brief Get a zero-length Duration
+         * @return Duration New Duration object representing zero time
+         *
+         * ### Example
+         * ```cpp
+         * Duration zeroDur = Duration::zero();
+         * ```
+         */
+        static Duration zero() {
+            return Duration(0);
+        };
+
+        /**
+         * @brief Create a Duration from microseconds
+         * @param us Time value in microseconds
+         * @return Duration New Duration object
+         *
+         * ### Example
+         * ```cpp
+         * Duration d = Duration::us(500);
+         * ```
+         */
+        static Duration us(uint64_t us) {
+            return Duration(us);
+        };
+
+        /**
+         * @brief Create a Duration from milliseconds
+         * @param ms Time value in milliseconds
+         * @return Duration New Duration object
+         *
+         * ### Example
+         * ```cpp
+         * Duration d = Duration::ms(2); // 2000 microseconds
+         * ```
+         */
+        static Duration ms(uint64_t ms) {
+            return Duration(ms * 1000L);
+        };
+
+        /**
+         * @brief Convert the duration to a human-readable string
+         * @return String Representation of the duration in microseconds
+         * 
+         * @note The string format is a simple decimal number (e.g., "1234567")
+         * @note Negative values are prefixed with '-' (though unlikely with time durations)
+         *
+         * ### Example
+         * ```cpp
+         * Duration d(1234567);
+         * String s = d.toString(); // "1234567"
+         * Serial.println(s);
+         * ```
+         */
+        String toString() {
+            uint64_t num = valueMicros;
+
+            static char buf[22];
+            char* p = &buf[sizeof(buf)-1];
+            *p = '\0';
+            do {
+                *--p = '0' + (num%10);
+                num /= 10;
+            } while ( num > 0 );
+            if( (byte)((num & bit(64))>>63) == 1 ){
+                *--p = '-';
             }
+            return p;
+        }
 
-            /**
-             * @brief Calculate the absolute difference between two Duration objects
-             * @param other The Duration to compare with
-             * @return Duration New Duration object representing the absolute difference
-             */
-            Duration diff(const Duration& other) const {
-                return Duration(valueMillis - other.valueMillis);
+        /**
+         * @brief Assignment operator
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(1000);
+         * Duration d2 = d1;
+         * ```
+         */
+        Duration& operator=(const Duration& other) {
+            if (this != &other) {
+                valueMicros = other.valueMicros;
             }
-        
-            /**
-             * @brief Add another Duration to this one
-             * @param other The Duration to add
-             * @return Duration New Duration object representing the sum
-             */
-            Duration add(const Duration& other) const {
-                return Duration(valueMillis + other.valueMillis);
-            }
-        
-            /**
-             * @brief Subtract another Duration from this one
-             * @param other The Duration to subtract
-             * @return Duration New Duration object representing the difference
-             */
-            Duration subtract(const Duration& other) const {
-                return Duration(valueMillis - other.valueMillis);
-            }
+            return *this;
+        }
 
-            /**
-             * @brief Check if this Duration represents a later time than another
-             * @param other The Duration to compare with
-             * @return bool True if this Duration is after the other, false otherwise
-             */
-            bool after(const Duration& other) const {
-                return valueMillis > other.valueMillis;
-            }
+        /**
+         * @brief Comparison operators with Duration
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(1000);
+         * Duration d2(2000);
+         * bool eq = d1 == d2; // false
+         * bool neq = d1 != d2; // true
+         * bool less = d1 < d2; // true
+         * bool greater = d2 > d1; // true
+         * bool leq = d1 <= d2; // true
+         * bool geq = d2 >= d1; // true
+         * ```
+         */
+        bool operator==(const Duration& other) const { return valueMicros == other.valueMicros; }
+        bool operator!=(const Duration& other) const { return valueMicros != other.valueMicros; }
+        bool operator<(const Duration& other)  const { return valueMicros < other.valueMicros; }
+        bool operator>(const Duration& other)  const { return valueMicros > other.valueMicros; }
+        bool operator<=(const Duration& other) const { return valueMicros <= other.valueMicros; }
+        bool operator>=(const Duration& other) const { return valueMicros >= other.valueMicros; }
 
-            /**
-             * @brief Check if this Duration represents an earlier time than another
-             * @param other The Duration to compare with
-             * @return bool True if this Duration is before the other, false otherwise
-             */
-            bool before(const Duration& other) const {
-                return valueMillis < other.valueMillis;
-            }
+        /**
+         * @brief Arithmetic operators with Duration and uint64_t
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(1000);
+         * Duration d2(2000);
+         * Duration sum = d1 + d2; // 3000
+         * Duration diff = d2 - d1; // 1000
+         * Duration prod = d1 * d2; // 2,000,000
+         * Duration quot = d2 / d1; // 2
+         * Duration prod2 = d1 * 3; // 3000
+         * Duration quot2 = d2 / 2; // 1000
+         * Duration sum2 = d1 + 500; // 1500
+         * Duration diff2 = d2 - 500; // 1500
+         * ```
+         */
+        Duration operator+(const Duration& other) const { return Duration(valueMicros + other.valueMicros); }
+        Duration operator-(const Duration& other) const { return Duration(valueMicros > other.valueMicros ? valueMicros - other.valueMicros : 0); }
+        Duration operator*(const Duration& other) const { return Duration(valueMicros * other.valueMicros); }
+        Duration operator/(const Duration& other) const { return other.valueMicros ? Duration(valueMicros / other.valueMicros) : Duration(0); }
 
-            /**
-             * @brief Get the duration in the specified time unit
-             * @param type Time unit constant (MICRO, MILLIS, SECONDS, etc.)
-             * @return uint64_t Duration value converted to the requested unit
-             * 
-             * @note Conversion details:
-             * - MICRO: Returns milliseconds * 1000 (no fractional microseconds)
-             * - SECONDS/MINUTES/HOURS: Uses integer division (truncates remainder)
-             * - Default unit is milliseconds (MILLIS)
-             */
-            uint64_t get(int type = MILLIS) {
-                switch(type) {
-                    case MICRO:   return valueMillis * 1000L;
-                    case MILLIS:  return valueMillis;
-                    case SECONDS: return valueMillis / 1000L;
-                    case MINUTES: return valueMillis / (1000L * 60);
-                    case HOURS:   return valueMillis / (1000L * 3600);
-                    default:      return valueMillis;
-                }
-            };
-
-            ///@name Factory Methods
-            ///@{
-
-            /**
-             * @brief Get current time as a Duration object
-             * @return Duration* New Duration object representing current time
-             * 
-             * @note The caller is responsible for managing the returned pointer
-             */
-            static Duration now() {
-                return Duration(millis());
-            };
-
-            static Duration maximum() {
-                return Duration((uint64_t)-1);
-            };
-
-            /**
-             * @brief Get a zero-length Duration
-             * @return Duration* New Duration object representing zero time
-             */
-            static Duration zero() {
-                return Duration(0);
-            };
-
-            /**
-             * @brief Create a Duration from milliseconds
-             * @param ms Time value in milliseconds
-             * @return Duration* New Duration object
-             */
-            static Duration ms(uint64_t ms) {
-                return Duration(ms);
-            };
-
-            /**
-             * @brief Convert the duration to a human-readable string
-             * @return String Representation of the duration in milliseconds
-             * 
-             * @note The string format is a simple decimal number (e.g., "1234")
-             * @note Negative values are prefixed with '-' (though unlikely with time durations)
-             */
-            String toString() {
-                uint64_t num = valueMillis;
-
-                static char buf[22];
-                char* p = &buf[sizeof(buf)-1];
-                *p = '\0';
-                do {
-                    *--p = '0' + (num%10);
-                    num /= 10;
-                } while ( num > 0 );
-                if( (byte)((num & bit(64))>>63) == 1 ){
-                    *--p = '-';
-                }
-                return p;
-            }
+        Duration operator*(uint64_t factor) const { return Duration(valueMicros * factor); }
+        Duration operator/(uint64_t divisor) const { return divisor ? Duration(valueMicros / divisor) : Duration(0); }
+        Duration operator+(uint64_t other) const { return Duration(valueMicros + other); }
+        Duration operator-(uint64_t other) const { return Duration(valueMicros > other ? valueMicros - other : 0); }
     };
 }

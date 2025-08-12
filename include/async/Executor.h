@@ -39,7 +39,7 @@ namespace async {
                 list.push_back(tick);
 
                 if(this->begin) {
-                    tick->start();
+                    tick->start(this);
                 }
             }
 
@@ -76,6 +76,10 @@ namespace async {
                 }
 
                 return true;
+            }
+
+            bool loop() {
+                return true; // Executor does not loop by default
             }
 
             ///@name Task Creation Methods
@@ -159,11 +163,15 @@ namespace async {
              * 
              * @warning Currently implemented as DEMAND task (needs proper interrupt handling)
              */
-            // Task * onInterrupt(uint8_t pin, int mode, voidCallback cb) {
-            //     auto task = new Task(pin, mode, cb);
-            //     this->add(task);
-            //     return task;
-            // }
-            ///@}
+            DemandTask<bool> * onInterrupt(Pin pin, voidCallback cb) {
+                auto task = new DemandTask<bool>([cb](bool value) {
+                    cb();
+                })
+
+                pin.onInterrupt(task);
+      
+                this->add(task);
+                return task;
+            }
     };
 }
