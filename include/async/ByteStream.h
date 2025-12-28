@@ -1,4 +1,7 @@
+#pragma once
+
 #include <async/Stream.h>
+#include <string.h>
 
 /**
  * @file ByteStream.h
@@ -14,9 +17,9 @@ namespace async {
      */
     class ByteStream : public Stream {
     private:
-        const uint8_t* data;    ///< Pointer to the byte buffer.
-        size_t dataSize;        ///< Size of the buffer.
-        size_t currentPos;      ///< Current read position.
+        const unsigned char* data;    ///< Pointer to the byte buffer.
+        unsigned int dataSize;        ///< Size of the buffer.
+        unsigned int currentPos;      ///< Current read position.
 
     public:
         /**
@@ -24,7 +27,7 @@ namespace async {
          * @param buffer Pointer to the byte buffer.
          * @param size Size of the buffer.
          */
-        ByteStream(const uint8_t* buffer, size_t size)
+        ByteStream(const unsigned char* buffer, unsigned int size)
             : data(buffer), dataSize(size), currentPos(0) {}
 
         /**
@@ -57,8 +60,9 @@ namespace async {
          * @param length Number of bytes to read.
          * @return Number of bytes actually read.
          */
-        size_t read(char* buffer, size_t length) override {
-            size_t toRead = min(length, dataSize - currentPos);
+        unsigned int read(char* buffer, unsigned int length) override {
+            unsigned int size = dataSize - currentPos;
+            unsigned int toRead = size < dataSize ? size : dataSize;
             if (toRead > 0) {
                 memcpy(buffer, data + currentPos, toRead);
                 currentPos += toRead;
@@ -71,7 +75,7 @@ namespace async {
          * @param pos Position to seek to.
          * @return true if successful, false otherwise.
          */
-        bool seek(size_t pos) override {
+        bool seek(unsigned int pos) override {
             if (pos > dataSize) return false;
             currentPos = pos;
             return true;
@@ -81,7 +85,7 @@ namespace async {
          * @brief Gets the current position in the stream.
          * @return Current position.
          */
-        size_t position() const override {
+        unsigned int position() const override {
             return currentPos;
         }
 
@@ -89,7 +93,7 @@ namespace async {
          * @brief Gets the total size of the stream.
          * @return Size of the stream.
          */
-        size_t size() const override {
+        unsigned int size() const override {
             return dataSize;
         }
     };

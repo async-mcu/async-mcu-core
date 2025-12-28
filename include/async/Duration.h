@@ -1,5 +1,6 @@
 #pragma once
-#include <Arduino.h>
+#include <stdint.h>
+#include "esp_timer.h"
 
 /**
  * @class Duration
@@ -15,6 +16,21 @@
 namespace async {
 
     class Duration {
+    private:
+        /**
+         * @brief Construct a new Duration object
+         * @param us Duration value in microseconds
+         *
+         * ### Example
+         * ```cpp
+         * Duration d1(1000); // 1000 microseconds
+         * Duration d2 = Duration::ms(1); // 1 millisecond = 1000 microseconds
+         * ```
+         */
+        Duration(uint64_t us) {
+            valueMicros = us;
+        }
+        
     protected:
         uint64_t valueMicros; ///< Internal storage in microseconds (64-bit for extended range)
 
@@ -30,28 +46,7 @@ namespace async {
          */
         ~Duration() {}
 
-        /**
-         * @brief Construct a new Duration object
-         * @param us Duration value in microseconds
-         *
-         * ### Example
-         * ```cpp
-         * Duration d1(1000); // 1000 microseconds
-         * Duration d2 = Duration::ms(1); // 1 millisecond = 1000 microseconds
-         * ```
-         */
-        Duration(uint64_t us) {
-            valueMicros = us;
-        }
 
-        ///@name Time Unit Constants
-        ///@{
-        static const byte MICRO   = 0;   ///< Microseconds (μs) unit identifier
-        static const byte MILLIS  = 1;   ///< Milliseconds (ms) unit identifier
-        static const byte SECONDS = 2;   ///< Seconds (s) unit identifier
-        static const byte MINUTES = 3;   ///< Minutes (min) unit identifier
-        static const byte HOURS   = 4;   ///< Hours (hr) unit identifier
-        ///@}
 
         /**
          * @brief Set duration value
@@ -147,28 +142,20 @@ namespace async {
             return valueMicros < other.valueMicros;
         }
 
+        uint64_t us() {
+            return valueMicros;
+        }
+
+        uint64_t ms() {
+            return valueMicros / 1000ULL;
+        }
+
+        uint64_t sec() {
+            return ms() / 1000ULL;
+        }
+
         /**
-         * @brief Get the duration in the specified time unit
-         * @param type Time unit constant (MICRO, MILLIS, SECONDS, etc.)
-         * @return uint64_t Duration value converted to the requested unit
-         *
-         * ### Example
-         * ```cpp
-         * Duration d(1234567);
-         * uint64_t ms = d.get(Duration::MILLIS); // 1234 ms
-         * uint64_t sec = d.get(Duration::SECONDS); // 1 sec
-         * ```
-         */
-        uint64_t get(int type = MICRO) {
-            switch(type) {
-                case MICRO:   return valueMicros;
-                case MILLIS:  return valueMicros / 1000L;
-                case SECONDS: return valueMicros / 1000000L;
-                case MINUTES: return valueMicros / (1000000L * 60);
-                case HOURS:   return valueMicros / (1000000L * 3600);
-                default:      return valueMicros;
-            }
-        };
+
 
         ///@name Factory Methods
         ///@{
@@ -184,7 +171,7 @@ namespace async {
          * ```
          */
         static Duration now() {
-            return Duration(micros());
+            return Duration(esp_timer_get_time());
         };
 
         /**
@@ -213,19 +200,10 @@ namespace async {
             return Duration(0);
         };
 
-        /**
-         * @brief Create a Duration from microseconds
-         * @param us Time value in microseconds
-         * @return Duration New Duration object
-         *
-         * ### Example
-         * ```cpp
-         * Duration d = Duration::us(500);
-         * ```
-         */
-        static Duration us(uint64_t us) {
-            return Duration(us);
-        };
+
+        static Duration * us(uint32_t us) {
+            return new Duration(us);
+        }
 
         /**
          * @brief Create a Duration from milliseconds
@@ -237,9 +215,9 @@ namespace async {
          * Duration d = Duration::ms(2); // 2000 microseconds
          * ```
          */
-        static Duration ms(uint64_t ms) {
-            return Duration(ms * 1000L);
-        };
+        static Duration * ms(uint32_t ms) {
+            return new Duration(ms * 1000ULL);
+        }
 
         /**
          * @brief Convert the duration to a human-readable string
@@ -255,21 +233,21 @@ namespace async {
          * Serial.println(s);
          * ```
          */
-        String toString() {
-            uint64_t num = valueMicros;
+        // String toString() {
+        //     uint64_t num = valueMicros;
 
-            static char buf[22];
-            char* p = &buf[sizeof(buf)-1];
-            *p = '\0';
-            do {
-                *--p = '0' + (num%10);
-                num /= 10;
-            } while ( num > 0 );
-            if( (byte)((num & bit(64))>>63) == 1 ){
-                *--p = '-';
-            }
-            return p;
-        }
+        //     static char buf[22];
+        //     char* p = &buf[sizeof(buf)-1];
+        //     *p = '\0';
+        //     do {
+        //         *--p = '0' + (num%10);
+        //         num /= 10;
+        //     } while ( num > 0 );
+        //     if( (byte)((num & bit(64))>>63) == 1 ){
+        //         *--p = '-';
+        //     }
+        //     return p;
+        // }
 
         /**
          * @brief Assignment operator
@@ -308,7 +286,7 @@ namespace async {
         bool operator>(const Duration& other)  const { return valueMicros > other.valueMicros; }
         bool operator<=(const Duration& other) const { return valueMicros <= other.valueMicros; }
         bool operator>=(const Duration& other) const { return valueMicros >= other.valueMicros; }
-
+        operator uint64_t() const { return valueMicros; }
         /**
          * @brief Arithmetic operators with Duration and uint64_t
          *

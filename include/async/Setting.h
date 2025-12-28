@@ -1,5 +1,6 @@
 #pragma once
 #include <async/State.h>
+#include <async/Uuid.h>
 #include <Preferences.h>
 
 #define SETTINGS_NAMESPACE "S"
@@ -15,31 +16,25 @@ namespace async {
     template<>
     class Setting<int> : public State<int> {
         private:
-        const char * uuid;
-        uint16_t uuid16;
+        Uuid * uuid;
         Preferences prefs;
         int defaultValue;
 
         bool start() {
             prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
-            this->currValue = prefs.getInt(this->uuid, defaultValue);
+            this->currValue = prefs.getInt(this->uuid->asInt(), defaultValue);
             prefs.end();
             return true;
         }
 
         public:
-        Setting (const char * uuid, uint16_t uuid16, int defaultValue) : State<int>(defaultValue) {
+        Setting (int defaultValue, Uuid * uuid) : State<int>(defaultValue) {
             this->uuid = uuid;
-            this->uuid16 = uuid16;
             this->defaultValue = defaultValue;
         }
 
-        const char * getUuid() {
-            return this->uuid;
-        }
-
-        uint16_t getUuid16() {
-            return this->uuid16;
+        Uuid & getUuid() {
+            return * uuid;
         }
 
         void getAndSet(GetAndSetAllArgsCallback cbCallback) {

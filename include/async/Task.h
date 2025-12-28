@@ -1,252 +1,115 @@
 #pragma once
-#include <async/Tick.h>
-#include <async/Time.h>
-#include <async/Duration.h>
-#include <async/Callbacks.h>
-#include <esp_timer.h>
 
-/**
- * @file Task.h
- * @brief Defines task classes for scheduling and controlling asynchronous operations.
- */
+#include <functional>
+#include <async/Mode.h>
+#include <async/Duration.h>
+#include <async/Executor.h>
 
 namespace async {
 
-    enum TaskState {
-        CREATE = 0, ///< Object created
-        RUN    = 1, ///< Object started
-        CANCEL = 2, ///< Object canceled
-        PAUSE  = 3  ///< Object paused
-    };
+enum Type {
+  REPEAT = 0,
+  DELAY = 1,
+  DEMAND = 2,
+  TICK = 3,
+  ONCE = 4
+};
 
-    /**
-     * @class DemandTask
-     * @brief Task triggered on demand, supports typed parameter and result in callback.
-     *
-     * ### Example: DemandTask with int parameter
-     * ```cpp
-     * auto demand1 = new DemandTask<int>([](int result) {
-     *     Serial.println(result); // Prints 123
-     * });
-     * demand1->start();
-     * demand1->demand(123);
-     * ```
-     *
-     * ### Example: DemandTask with no parameter
-     * ```cpp
-     * auto demand2 = new DemandTask<>([] () {
-     *     Serial.println("No param demand!");
-     * });
-     * demand2->start();
-     * demand2->demand();
-     * ```
-     */
-    template<typename ParamT = void>
-    class DemandTask : public Tick {
-        protected:
-            volatile TaskState state;
-            std::function<void(ParamT)> callback;
-            ParamT param;
+enum Core {
+    CORE0 = 0,
+    CORE1 = 1
+};
 
-        public:
-            DemandTask(std::function<void(ParamT)> cb) : state(CREATE), callback(cb), param() {}
+class Task;
+Task * onOnce(Core core, Task * task) ;
 
-            void attach(Executor * executor) {
-                executor->add(this);
+class Task {
+    private: 
+        Mode mode;
+        Type type;
+        Core core;
+        Duration * delay = nullptr;
+        Duration * interval = nullptr;
+        esp_timer_handle_t * timer = NULL;
+        uint64_t next = UINT64_MAX;
+        std::function<void(Task *)> callback;
+        void * value;
+        bool certainly = false;
+
+    public: 
+        Task(Type type, Mode mode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback)
+            : type(type), mode(mode), core(core), delay(delay), interval(interval), callback(callback) {}
+            
+        Task(Type type, Mode mode,Core core, Duration * delay, std::function<void(Task *)> callback)
+            : type(type), mode(mode), core(core), delay(delay), callback(callback) {}
+
+        Task(Type type, Mode mode, Core core, std::function<void(Task *)> callback)
+            : type(type), mode(mode), core(core), callback(callback) {}
+
+        Type getType() {
+            return type;
+        }
+
+        Duration & getInterval() {
+            return * interval;
+        }
+
+        Duration & getDelay() {
+            return * delay;
+        }
+
+        Mode getMode() {
+            return mode;
+        }
+
+        esp_timer_handle_t & getTimer() {
+            return * timer;
+        }
+
+        void setTimer(esp_timer_handle_t * timer) {
+            this->timer = timer;
+        }
+
+        uint64_t getNext() {
+            return next;
+        }
+
+        void setNext(uint64_t value) {
+            this->next = value;
+        }
+
+        void execute() {
+            callback(this);
+        }
+
+        void schedule() {
+            certainly = true;
+            onOnce(core, this);
+        }
+
+        void setCertainly(bool value) {
+            this->certainly = value;
+        }
+
+        bool isCertainly() {
+            return certainly;
+        }
+
+        void * getValue() {
+            return value;
+        }
+
+        void setValue(void * value) {
+            this->value = value;
+        }
+
+        void cancel() {
+            if(timer != NULL) {
+                esp_timer_delete(*timer);
             }
-            bool start() override { state = RUN; return true; }
-            bool pause() override { state = PAUSE; return true; }
-            bool resume() override { state = RUN; return true; }
-            bool cancel() override { state = CANCEL; return true; }
 
-            /**
-             * @brief Demand execution with parameter
-             * @param value Parameter for callback
-             */
-            void demand(ParamT value) {
-                param = value;
-                if (state == RUN && callback) {
-                    callback(param);
-                    state = PAUSE;
-                }
-            }
-
-            void setParam(const ParamT& value) { param = value; }
-            ParamT getParam() const { return param; }
-            bool tick() override { return state != CANCEL; }
-        };
-
-        // Specialization for void parameter
-        template<>
-        class DemandTask<void> : public Tick {
-        protected:
-            volatile TaskState state;
-            std::function<void()> callback;
-
-        public:
-            DemandTask(std::function<void()> cb) : state(CREATE), callback(cb) {}
-
-            bool start() override { state = RUN; return true; }
-            bool pause() override { state = PAUSE; return true; }
-            bool resume() override { state = RUN; return true; }
-            bool cancel() override { state = CANCEL; return true; }
-
-            /**
-             * @brief Demand execution without parameter
-             */
-            void demand() {
-                if (state == RUN && callback) {
-                    callback();
-                    state = PAUSE;
-                }
-            }
-
-            bool tick() override { return state != CANCEL; }
-    };
-
-    /**
-     * @class TickTask
-     * @brief Task executed every tick
-     */
-    class TickTask : public Tick {
-    protected:
-        volatile TaskState state;
-        VoidCallback callback;
-
-    public:
-        TickTask(VoidCallback cb) : state(CREATE), callback(cb) {}
-
-        bool start() override { state = RUN; return true; }
-        bool pause() override { state = PAUSE; return true; }
-        bool resume() override { state = RUN; return true; }
-        bool cancel() override { state = CANCEL; return true; }
-
-        bool tick() override {
-            if (state == RUN) callback();
-            return state != CANCEL;
+            next = UINT64_MAX;
         }
-    };
+};
 
-    /**
-     * @class DelayTask
-     * @brief One-time delayed task using esp_timer
-     */
-    class DelayTask : public Tick {
-    protected:
-        volatile TaskState state;
-        Duration* duration;
-        VoidCallback callback;
-        esp_timer_handle_t timer;
-
-        static void timerCallback(void* arg) {
-            DelayTask* self = static_cast<DelayTask*>(arg);
-            if (self->state == RUN && self->callback) {
-                self->callback();
-                self->state = CANCEL;
-            }
-        }
-
-    public:
-        DelayTask(Duration* dur, VoidCallback cb) : state(CREATE), duration(dur), callback(cb), timer(nullptr) {}
-
-        bool start() override {
-            if (state == CREATE || state == PAUSE) {
-                esp_timer_create_args_t args = {
-                    .callback = &DelayTask::timerCallback,
-                    .arg = this,
-                    .dispatch_method = ESP_TIMER_TASK,
-                    .name = "D" // DelayTask
-                };
-                esp_timer_create(&args, &timer);
-                esp_timer_start_once(timer, duration->get(Duration::MICRO));
-                state = RUN;
-            }
-            return true;
-        }
-
-        bool pause() override {
-            if (timer) esp_timer_stop(timer);
-            state = PAUSE;
-            return true;
-        }
-
-        bool resume() override {
-            if (timer) esp_timer_start_once(timer, duration->get(Duration::MICRO));
-            state = RUN;
-            return true;
-        }
-
-        bool cancel() override {
-            if (timer) {
-                esp_timer_stop(timer);
-                esp_timer_delete(timer);
-                timer = nullptr;
-            }
-            state = CANCEL;
-            return true;
-        }
-
-        bool tick() override { return state != CANCEL; }
-    };
-
-    /**
-     * @class RepeatTask
-     * @brief Repeating task using esp_timer
-     */
-    class RepeatTask : public Tick {
-    protected:
-        volatile TaskState state;
-        Duration* duration;
-        VoidCallback callback;
-        esp_timer_handle_t timer;
-
-        static void timerCallback(void* arg) {
-            RepeatTask* self = static_cast<RepeatTask*>(arg);
-            if (self->state == RUN && self->callback) {
-                self->callback();
-            }
-        }
-
-    public:
-        RepeatTask(Duration* dur, VoidCallback cb) : state(CREATE), duration(dur), callback(cb), timer(nullptr) {}
-
-        bool start() override {
-            if (state == CREATE || state == PAUSE) {
-                esp_timer_create_args_t args = {
-                    .callback = &RepeatTask::timerCallback,
-                    .arg = this,
-                    .dispatch_method = ESP_TIMER_TASK,
-                    .name = "R" // RepeatTask
-                };
-                esp_timer_create(&args, &timer);
-                esp_timer_start_periodic(timer, duration->get(Duration::MICRO));
-                state = RUN;
-            }
-            return true;
-        }
-
-        bool pause() override {
-            if (timer) esp_timer_stop(timer);
-            state = PAUSE;
-            return true;
-        }
-
-        bool resume() override {
-            if (timer) esp_timer_start_periodic(timer, duration->get(Duration::MICRO));
-            state = RUN;
-            return true;
-        }
-
-        bool cancel() override {
-            if (timer) {
-                esp_timer_stop(timer);
-                esp_timer_delete(timer);
-                timer = nullptr;
-            }
-            state = CANCEL;
-            return true;
-        }
-
-        bool tick() override { return state != CANCEL; }
-    };
 }

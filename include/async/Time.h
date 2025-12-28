@@ -1,6 +1,6 @@
 #pragma once
-#include <async/Tick.h>
 #include <async/Duration.h>
+#include "esp_timer.h"
 
 /**
  * @brief Writes a 2-digit number to a character buffer
@@ -184,7 +184,7 @@ namespace async {
        * @return uint64_t Milliseconds since Unix epoch (1970-01-01)
        */
       uint64_t getTimestamp() {
-        return millis() + this->valueMillis;
+        return esp_timer_get_time() + this->valueMillis;
       }
 
       /**
@@ -241,16 +241,16 @@ namespace async {
        * @brief Convert time to formatted String object
        * @return String Formatted as "YYYY-MM-DD HH:MM:SS.MMM"
        */
-      String toString() {
-        uint16_t year, millisecond;
-        uint8_t month, day, hour, minute, second;
-        char buffer[24];
+      // String toString() {
+      //   uint16_t year, millisecond;
+      //   uint8_t month, day, hour, minute, second;
+      //   char buffer[24];
 
-        getTime(year, month, day, hour, minute, second, millisecond);
-        formatDateTime(buffer, year, month, day, hour, minute, second, millisecond);
+      //   getTime(year, month, day, hour, minute, second, millisecond);
+      //   formatDateTime(buffer, year, month, day, hour, minute, second, millisecond);
         
-        return String(buffer);
-      }
+      //   return String(buffer);
+      // }
 
       ///@name Factory Methods
       ///@{
@@ -300,7 +300,7 @@ namespace async {
        * @note Caller is responsible for memory management
        */
       static Time * now() {
-        return new Time(millis());
+        return new Time(esp_timer_get_time());
       };
 
       /**

@@ -4,7 +4,6 @@
  * @file Semaphore.h
  * @brief Defines the async::Semaphore class for managing resource access in asynchronous environments.
  */
-
 namespace async {
 
     /**
