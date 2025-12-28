@@ -15,8 +15,10 @@
  */
 namespace async {
 
-    class Duration {
-    private:
+class Duration {
+    protected:
+        uint64_t valueMicros; ///< Internal storage in microseconds (64-bit for extended range)
+
         /**
          * @brief Construct a new Duration object
          * @param us Duration value in microseconds
@@ -30,9 +32,6 @@ namespace async {
         Duration(uint64_t us) {
             valueMicros = us;
         }
-        
-    protected:
-        uint64_t valueMicros; ///< Internal storage in microseconds (64-bit for extended range)
 
     public:
         /**
@@ -313,5 +312,5 @@ namespace async {
         Duration operator/(uint64_t divisor) const { return divisor ? Duration(valueMicros / divisor) : Duration(0); }
         Duration operator+(uint64_t other) const { return Duration(valueMicros + other); }
         Duration operator-(uint64_t other) const { return Duration(valueMicros > other ? valueMicros - other : 0); }
-    };
+};
 }
