@@ -30,23 +30,27 @@ void setup() {
     }
   });
   
-
+  // multi interrupts on pin14_RTC
   pin14_RTC.onInterrupt<Active>(ONLOW, []() {
     Serial.printf("pin14_RTC onInterrupt::ONLOW, time %llu ms\n", rts_ms());
-  });
-
-  pin14_RTC.onInterrupt<Active>(RISING, []() {
-    Serial.printf("pin14_RTC onInterrupt::RISING, time %llu ms\n", rts_ms());
   });
 
   pin14_RTC.onInterrupt<Active>(FALLING, []() {
     Serial.printf("pin14_RTC onInterrupt::FALLING, time %llu ms\n", rts_ms());
   });
 
+  // single interrupt on pin19_RTC creating another interrupt on pin14_RTC
   pin19_RTC.onInterrupt<Active>(RISING, []() {
     Serial.printf("pin19_RTC onInterrupt::RISING, time %llu ms\n", rts_ms());
+
+    pin14_RTC.onInterrupt<Active>(RISING, []() {
+      Serial.printf("pin14_RTC onInterrupt::RISING, time %llu ms\n", rts_ms());
+    });
   });
 
+  pin19_RTC.onInterrupt<Active>(FALLING, []() {
+    Serial.printf("pin19_RTC onInterrupt::FALLING, time %llu ms\n", rts_ms());
+  });
 
   start();
 };

@@ -73,7 +73,7 @@ private:
         int value = digitalRead();
 
         if(!interrupted) {
-            ets_printf("!interrupted %d!  \n", pinNum);
+            //ets_printf("!interrupted %d!  \n", pinNum);
             interrupted = true;
             interruptTask->setValue((void *) value);
             interruptTask->schedule();
@@ -237,7 +237,7 @@ public:
 
 inline void Pin::ISR(void* arg) {
     Pin *instance = (Pin*) arg;
-    ets_printf("Wakeup!\n");
+    //ets_printf("Wakeup!\n");
     //gpio_intr_disable(instance->getPin());
     instance->interrupt();
 }
@@ -261,7 +261,7 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
     if(interruptTask == nullptr) {
         interruptTask = onDemand([this](Task * demandTask) {
             int value = (int) demandTask->getValue();
-            ets_printf("onDemand!\n");
+            //ets_printf("onDemand!\n");
             // revert = !revert;
             // if(revert) {
             //     gpio_wakeup_enable(pinNum, (currentMode != INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
@@ -275,7 +275,7 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
             for(auto interrupt : interrupts) {
                 if(interrupt.type == ONLOW && value == LOW) {
                     onTick([interrupt, this](Task * tickTask) {
-                        ets_printf("onTick!\n");
+                        //ets_printf("onTick!\n");
                         int value = digitalRead();
 
                         if(value == HIGH) {
