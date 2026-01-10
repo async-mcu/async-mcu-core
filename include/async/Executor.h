@@ -9,6 +9,7 @@
 #include "soc/rtc.h"
 #include "esp_system.h"
 #include "esp_private/panic_internal.h"
+#include "esp_heap_trace.h"
 #include "freertos/task.h"
 #include "esp_event.h"
 #include "esp_timer.h"
@@ -16,13 +17,33 @@
 #include <async/Duration.h>
 #include <async/Task.h>
 #include <async/Mode.h>
-#include "esp_wifi.h"
+#include <async/Interrupts.h>
 
 #define CURRENT_CORE (esp_cpu_get_core_id() == 0 ? CORE0 : CORE1)
 #define DEEP_TASKS_STACK 50
 
 namespace async {
-    
+std::vector<Task *> tasks[2];
+
+RTC_DATA_ATTR uint64_t deepTasksTime[DEEP_TASKS_STACK]; // agata call dad
+              uint64_t deepTasksTimeFast[DEEP_TASKS_STACK]; // agata call dad
+bool startFlag = false;
+bool timerIsRunning = false;
+int activeTasksCount = 0;
+uint64_t rtcBoot = 0;
+TaskHandle_t taskLoopCore0;
+TaskHandle_t taskLoopCore1;
+
+extern std::vector<interrupt_params> interrupts;
+
+/**
+ * @brief Get the current real-time stamp in microseconds.
+ * 
+ * This function retrieves the current time in microseconds using gettimeofday.
+ * Note: This is a slow operation.
+ * 
+ * @return int64_t Current time in microseconds.
+ */
 int64_t rts_us() { // slow
     struct timeval tv_now;
     gettimeofday(&tv_now, NULL);
@@ -30,24 +51,40 @@ int64_t rts_us() { // slow
     return time_us;
 }
 
+/**
+ * @brief Get the current real-time stamp in milliseconds.
+ * 
+ * This function retrieves the current time in milliseconds by dividing microseconds by 1000.
+ * 
+ * @return int64_t Current time in milliseconds.
+ */
 int64_t rts_ms() {
     return rts_us()/1000ULL;
 }
 
-std::vector<Task *> tasks;
-
-RTC_DATA_ATTR uint64_t deepTasksTime[DEEP_TASKS_STACK]; // agata call dad
-              uint64_t deepTasksTimeFast[DEEP_TASKS_STACK]; // agata call dad
-bool startFlag = false;
-bool timerIsRunning = false;
-int activeTasksCount = 0;
-
+/**
+ * @brief Check if deep sleep tasks can be added.
+ * 
+ * This function verifies that the executor has not been started yet, as deep sleep tasks
+ * can only be added before the start() method is called.
+ * 
+ * @throws esp_system_abort if the executor has already been started.
+ */
 void checkDeepSleepTaskCanBeAdded() {
     if(startFlag) {
         esp_system_abort("Deep tasks can only be added before the start() method.");
     }
 }
 
+/**
+ * @brief Static callback function to execute a task.
+ * 
+ * This function is used as a callback for ESP timers to execute tasks.
+ * It calls the task's execute method and decrements the active tasks count
+ * for active delay tasks.
+ * 
+ * @param arg Pointer to the Task object to execute (cast from void*).
+ */
 static void callTaskExecute(void *arg) {
     Task *obj = (Task *)arg;
     obj->execute();
@@ -58,7 +95,16 @@ static void callTaskExecute(void *arg) {
 }
 
 /**
+ * @brief Schedule a task to execute after a specified delay.
  * 
+ * Creates a delay task that will execute once after the specified delay.
+ * The mode template parameter determines how the task is handled (Active, Light, or Deep sleep).
+ * 
+ * @tparam mode The execution mode (Active, Light, or Deep).
+ * @param delay The duration to wait before executing the task.
+ * @param core The CPU core to run the task on.
+ * @param callback The function to execute when the delay expires.
+ * @return Task* Pointer to the created task.
  */
 template<Mode mode>
 Task * onDelay(Duration * delay, Core core, std::function<void(Task *)> callback) {
@@ -94,22 +140,43 @@ Task * onDelay(Duration * delay, Core core, std::function<void(Task *)> callback
         }
 
         if(esp_reset_reason() != ESP_RST_DEEPSLEEP) {
-            deepTasksTime[tasks.size()] = task->getDelay();
+            deepTasksTime[tasks[core].size()] = task->getDelay();
         }
 
-        tasks.push_back(task);
+        tasks[core].push_back(task);
     }
 
     return task;
 }
 
+/**
+ * @brief Schedule a task to execute after a specified delay on the current core.
+ * 
+ * Creates a delay task that will execute once after the specified delay on the current CPU core.
+ * The mode template parameter determines how the task is handled (Active, Light, or Deep sleep).
+ * 
+ * @tparam mode The execution mode (Active, Light, or Deep).
+ * @param delay The duration to wait before executing the task.
+ * @param callback The function to execute when the delay expires.
+ * @return Task* Pointer to the created task.
+ */
 template<Mode mode>
 Task * onDelay(Duration * delay, std::function<void(Task *)> callback) {
     return onDelay<mode>(delay, CURRENT_CORE, callback);
 }
 
 /**
+ * @brief Schedule a task to execute repeatedly with a specified interval and initial delay.
  * 
+ * Creates a repeating task that will first execute after startDelay, then repeat every interval.
+ * The mode template parameter determines how the task is handled (Active, Light, or Deep sleep).
+ * 
+ * @tparam mode The execution mode (Active, Light, or Deep).
+ * @param interval The interval between executions.
+ * @param startDelay The initial delay before first execution.
+ * @param core The CPU core to run the task on.
+ * @param callback The function to execute at each interval.
+ * @return Task* Pointer to the created task.
  */
 template<Mode mode> 
 Task * onRepeat(Duration * interval, Duration * startDelay, Core core, std::function<void(Task *)> callback) {
@@ -145,75 +212,141 @@ Task * onRepeat(Duration * interval, Duration * startDelay, Core core, std::func
         }
         
         if(esp_reset_reason() != ESP_RST_DEEPSLEEP) {
-            deepTasksTime[tasks.size()] = task->getDelay();
+            deepTasksTime[tasks[core].size()] = task->getDelay();
         }
 
-        tasks.push_back(task);
+        tasks[core].push_back(task);
     }
 
     return task;
 }
 
+/**
+ * @brief Schedule a task to execute repeatedly with a specified interval.
+ * 
+ * Creates a repeating task that will execute every interval period on the specified core.
+ * The first execution happens after the interval duration.
+ * 
+ * @tparam mode The execution mode (Active, Light, or Deep).
+ * @param interval The interval between executions (also used as start delay).
+ * @param core The CPU core to run the task on.
+ * @param callback The function to execute at each interval.
+ * @return Task* Pointer to the created task.
+ */
 template<Mode mode> 
 Task * onRepeat(Duration * interval, Core core, std::function<void(Task *)> callback) {
     return onRepeat<mode>(interval, interval, core, callback);
 }
 
+/**
+ * @brief Schedule a task to execute repeatedly with a specified interval on the current core.
+ * 
+ * Creates a repeating task that will execute every interval period on the current CPU core.
+ * The first execution happens after the interval duration.
+ * 
+ * @tparam mode The execution mode (Active, Light, or Deep).
+ * @param interval The interval between executions (also used as start delay).
+ * @param callback The function to execute at each interval.
+ * @return Task* Pointer to the created task.
+ */
 template<Mode mode> 
 Task * onRepeat(Duration * interval, std::function<void(Task *)> callback) {
     return onRepeat<mode>(interval, interval, CURRENT_CORE, callback);
 }
 
 /**
+ * @brief Create an on-demand task that executes when manually triggered.
  * 
+ * Creates a task that will only execute when explicitly called. This is useful for
+ * tasks that need to be triggered by external events or conditions.
+ * 
+ * @param core The CPU core to run the task on.
+ * @param callback The function to execute when the task is triggered.
+ * @return Task* Pointer to the created task.
  */
 Task * onDemand(Core core, std::function<void(Task *)> callback) {
-    return new Task(Type::DEMAND, Mode::Active, core, callback);
+    return new Task(Type::DEMAND, Mode::None, core, callback);
+}
+
+Task * onDemand(std::function<void(Task *)> callback) {
+    return new Task(Type::DEMAND, Mode::None, CURRENT_CORE, callback);
 }
 
 /**
+ * @brief Schedule a task to execute exactly once.
  * 
+ * Creates a task that will execute only once and then be automatically deleted.
+ * The task is added to the task list and will be executed in the next cycle.
+ * 
+ * @param core The CPU core to run the task on.
+ * @param callback The function to execute once.
+ * @return Task* Pointer to the created task.
  */
 Task * onOnce(Core core, std::function<void(Task *)> callback) {
     auto task = new Task(Type::ONCE, Mode::Active, core, callback);
-    tasks.push_back(task);
+    task->setCertainly(true);
+    tasks[core].push_back(task);
+    return task;
+}
+
+Task * onOnce(std::function<void(Task *)> callback) {
+    auto task = new Task(Type::ONCE, Mode::Active, CURRENT_CORE, callback);
+    task->setCertainly(true);
+    tasks[CURRENT_CORE].push_back(task);
     return task;
 }
 
 /**
+ * @brief Add an existing task to execute exactly once.
  * 
+ * Adds an already created task to the task list for one-time execution.
+ * The task will be executed in the next cycle and then deleted.
+ * 
+ * @param core The CPU core to run the task on (unused in this overload).
+ * @param task Pointer to the existing task to add.
+ * @return Task* Pointer to the added task.
  */
 Task * onOnce(Core core, Task * task) {
-    tasks.push_back(task);
+    ets_printf("onOnce core %d, size: %d!  \n", core, tasks[core].size());
+    task->setCertainly(true);
+    tasks[core].push_back(task);
     return task;
 }
 
+
 /**
+ * @brief Create a tick task that executes every cycle.
  * 
+ * Creates a task that will execute on every iteration of the executor's main loop.
+ * Tick tasks have the highest priority and run continuously.
+ * 
+ * @param core The CPU core to run the task on.
+ * @param callback The function to execute on each tick.
+ * @return Task* Pointer to the created task.
  */
 Task * onTick(Core core, std::function<void(Task *)> callback) {
     auto task = new Task(Type::TICK, Mode::Active, core, callback);
-    tasks.push_back(task);
+    task->setNext(0);
+    tasks[core].push_back(task);
     return task;
 }
 
+/**
+ * @brief Create a tick task that executes every cycle on the current core.
+ * 
+ * Creates a task that will execute on every iteration of the executor's main loop
+ * on the current CPU core. Tick tasks have the highest priority and run continuously.
+ * 
+ * @param callback The function to execute on each tick.
+ * @return Task* Pointer to the created task.
+ */
 Task * onTick(std::function<void(Task *)> callback) {
     return onTick(CURRENT_CORE, callback);
 }
 
-void start() {
-    if(startFlag) {
-        esp_system_abort("Already started");
-    }
-
-    uint64_t rtcBoot = rts_us();
-
-    for(int i=0; i < DEEP_TASKS_STACK; i++) {
-        deepTasksTimeFast[i] = deepTasksTime[i];
-    }
-
-    startFlag = true;
+void mainLoop(void * parameter) {
     std::vector<Task *> toExecute;
+    std::vector<Task *>& tasks = *(std::vector<Task *> *)parameter;
 
     while(true) {
         uint64_t minSleepTimeDeep = UINT64_MAX;
@@ -233,13 +366,22 @@ void start() {
                 
                 if(tasks[i]->getType() == Type::ONCE) {
                     delete tasks[i]; // 1. Освобождаем память
+                }
+                
+                tasks.erase(tasks.begin() + i);
+                i--;
+            }
+            else if(tasks[i]->getType() == Type::TICK) {
+
+                if(tasks[i]->getNext() != UINT64_MAX) {
+                    tickTasksExists = true;
+                    toExecute.push_back(tasks[i]);
+                }
+                else {
+                    delete tasks[i]; // 1. Освобождаем память
                     tasks.erase(tasks.begin() + i);
                     i--;
                 }
-            }
-            else if(tasks[i]->getType() == Type::TICK && tasks[i]->getNext() != UINT64_MAX) {
-                tickTasksExists = true;
-                toExecute.push_back(tasks[i]);
             }
             else if(tasks[i]->getMode() == Mode::Light) {
                 if(tasks[i]->getNext() != UINT64_MAX) {
@@ -259,8 +401,13 @@ void start() {
                         }
                     }
                     else if(!tickTasksExists) {
-                        minSleepTimeLight = min(minSleepTimeLight, tasks[i]->getNext());
+                        minSleepTimeLight = minSleepTimeLight < tasks[i]->getNext() ? minSleepTimeLight : tasks[i]->getNext();
                     }
+                }
+                else {
+                    delete tasks[i]; // 1. Освобождаем память
+                    tasks.erase(tasks.begin() + i);
+                    i--;
                 }
             }
             else if(tasks[i]->getMode() == Mode::Deep) {
@@ -278,7 +425,7 @@ void start() {
                         }
                     }
                     else if(!tickTasksExists && !lightTasksExists) {
-                        minSleepTimeDeep = min(minSleepTimeDeep, deepTasksTimeFast[i]);
+                        minSleepTimeDeep = minSleepTimeDeep < deepTasksTimeFast[i] ? minSleepTimeDeep : deepTasksTimeFast[i];
                     }
                 }
             }
@@ -289,19 +436,24 @@ void start() {
                 task->execute();
             }
         }
-        else if(tickTasksExists || activeTasksCount > 0) {
+        else if(tickTasksExists || activeTasksCount || interruptLevel == Mode::Active) {
             //
         }
-        else if(lightTasksExists) {
+        else if(lightTasksExists || interruptLevel == Mode::Light) {
             if(minSleepTimeLight != UINT64_MAX) {
-                esp_sleep_enable_timer_wakeup(minSleepTimeLight);
+                esp_sleep_enable_timer_wakeup(minSleepTimeLight - esp_timer_get_time());
                 timerIsRunning = true;
             }
             else if(timerIsRunning) {
                 esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
                 timerIsRunning = false;
             }
+            
+            if(interruptLevel == Mode::Light) {
+                esp_sleep_enable_gpio_wakeup();
+            }
 
+            ets_printf("esp_light_sleep_start!\n");
             esp_light_sleep_start();
         }
         else {
@@ -318,11 +470,60 @@ void start() {
                 timerIsRunning = false;
             }
     
+            ets_printf("esp_deep_sleep_start!\n");
             esp_deep_sleep_start();
         }
 
-        //vTaskDelay(1);
+        vTaskDelay(1); // yield to other tasks
     }
+}
+
+/**
+ * @brief Start the async executor main loop.
+ * 
+ * This function starts the main execution loop that processes all scheduled tasks.
+ * It runs indefinitely, checking for tasks to execute, managing sleep modes,
+ * and handling task scheduling. This function should be called once after
+ * setting up all tasks.
+ * 
+ * The executor will:
+ * - Process tick tasks on every iteration
+ * - Execute delayed and repeating tasks when their time comes
+ * - Enter light sleep when only light tasks are pending
+ * - Enter deep sleep when only deep tasks are pending
+ * - Handle active tasks using ESP timers
+ * 
+ * @note This function never returns - it runs the main execution loop indefinitely.
+ * @throws esp_system_abort if the executor has already been started.
+ */
+void start() {
+    if(startFlag) {
+        esp_system_abort("Already started");
+    }
+
+    rtcBoot = rts_us();
+
+    for(int i=0; i < DEEP_TASKS_STACK; i++) {
+        deepTasksTimeFast[i] = deepTasksTime[i];
+    }
+
+    startFlag = true;
+
+    xTaskCreatePinnedToCore(mainLoop, // Task function.
+                    "",     // name of task. //
+                    10000,       // Stack size of task //
+                    &tasks[0],        // parameter of the task //
+                    1,           // priority of the task //
+                    &taskLoopCore0,      // Task handle to keep track of created task //
+                    0);          // pin task to core 0 // 
+
+    xTaskCreatePinnedToCore(mainLoop, // Task function.
+                    "",     // name of task. //
+                    10000,       // Stack size of task //
+                    &tasks[1],        // parameter of the task //
+                    1,           // priority of the task //
+                    &taskLoopCore1,      // Task handle to keep track of created task //
+                    1);          // pin task to core 0 // 
 }
 
 }

@@ -1,3 +1,4 @@
+#pragma once
 #include "async/Time.h"
 
 using namespace async;

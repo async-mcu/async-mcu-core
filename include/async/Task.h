@@ -9,10 +9,11 @@ namespace async {
 
 enum Type {
   REPEAT = 0,
-  DELAY = 1,
-  DEMAND = 2,
-  TICK = 3,
-  ONCE = 4
+  DELAY = 10,
+  DEMAND = 20,
+  TICK = 30,
+  ONCE = 40,
+  INTERR = 50
 };
 
 enum Core {
@@ -28,13 +29,14 @@ class Task {
         Mode mode;
         Type type;
         Core core;
+        uint64_t next = UINT64_MAX;
+        bool certainly = false;
+        std::function<void(Task *)> callback;
+        
         Duration * delay = nullptr;
         Duration * interval = nullptr;
-        esp_timer_handle_t * timer = NULL;
-        uint64_t next = UINT64_MAX;
-        std::function<void(Task *)> callback;
-        void * value;
-        bool certainly = false;
+        esp_timer_handle_t * timer = nullptr;
+        void * value = nullptr;
 
     public: 
         Task(Type type, Mode mode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback)
@@ -45,6 +47,27 @@ class Task {
 
         Task(Type type, Mode mode, Core core, std::function<void(Task *)> callback)
             : type(type), mode(mode), core(core), callback(callback) {}
+
+        ~Task() {
+            ets_printf("remove task mode %d, type %d!\n", mode, type);
+            if(delay != nullptr) {
+                delete delay;
+                delay = nullptr;
+            }   
+            if(interval != nullptr) {
+                delete interval;
+                interval = nullptr;
+            }
+            if(timer != nullptr) {
+                esp_timer_delete(*timer);
+                delete timer;
+                timer = nullptr;
+            }
+            if(value != nullptr) {
+                delete value;
+                value = nullptr;
+            }
+        }
 
         Type getType() {
             return type;
@@ -83,7 +106,6 @@ class Task {
         }
 
         void schedule() {
-            certainly = true;
             onOnce(core, this);
         }
 
@@ -106,6 +128,7 @@ class Task {
         void cancel() {
             if(timer != NULL) {
                 esp_timer_delete(*timer);
+                delete timer;
             }
 
             next = UINT64_MAX;

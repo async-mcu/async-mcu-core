@@ -1,4 +1,5 @@
 #pragma once
+
 #include <stdint.h>
 #include "esp_timer.h"
 
@@ -43,7 +44,9 @@ class Duration {
          * delete d;
          * ```
          */
-        ~Duration() {}
+        ~Duration() {
+            ets_printf("delete task!\n");
+        }
 
 
 
