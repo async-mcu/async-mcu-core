@@ -1,6 +1,5 @@
 #pragma once
 
-#include <stdio.h>
 #include <functional>
 #include <vector>
 #include "driver/gpio.h"
@@ -8,9 +7,9 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_sleep.h"
 #include "esp_attr.h"
+#include "esp_heap_trace.h"
 #include <async/Executor.h>
 #include <async/Interrupts.h>
-#include "esp_heap_trace.h"
 
 // Arduino-style константы
 #define LOW               0x0
@@ -32,7 +31,6 @@
 #define ONLOW     GPIO_INTR_LOW_LEVEL
 #define ONHIGH    GPIO_INTR_HIGH_LEVEL
 
-
 // Метки для шаблонов прерываний
 namespace async {
 
@@ -47,7 +45,6 @@ bool isValidRtcPin(int pin) {
 RTC_DATA_ATTR uint64_t deepInterrupts[DEEP_TASKS_STACK]; // agata call dad
 //extern std::vector<interrupt_params> interrupts;
 bool isrServiceInstalled = false;
-
 
 class Pin {
     
@@ -100,8 +97,8 @@ private:
 public:
     Pin(int pin, int mode = INPUT_PULLUP, int defaultLevel = HIGH): pinNum((gpio_num_t)pin), currentMode(mode), level(defaultLevel) {
         onOnce(CURRENT_CORE, [this](Task *) {
-            ets_printf("Pin %d!  \n", pinNum);
-            //gpio_reset_pin(pinNum);
+            ESP_LOGD(TAG_PIN, "Init pin %d, mode %d", pinNum, currentMode);
+
             setMode(currentMode);
 
             switch (currentMode) {
@@ -251,6 +248,11 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
         .callback = callback
     });
 
+    globalInterrupts.push_back((interrupt_params) {
+        .type = type,
+        .pinNum = pinNum
+    });
+
     // first install isr service
     if (!isrServiceInstalled) {
         gpio_install_isr_service(0);
@@ -313,43 +315,42 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
         });
     }
 
-    // onOnce([this](Task *){
-        bool rising = false;
-        bool falling = false;
-        bool onlow = false;
-        bool onhigh = false;
-        bool anyedge = false;
+    bool rising = false;
+    bool falling = false;
+    bool onlow = false;
+    bool onhigh = false;
+    bool anyedge = false;
 
-        for(auto interrupt : interrupts) {
-            if(interrupt.type == RISING) rising = true;
-            else if(interrupt.type == FALLING) falling = true;
-            else if(interrupt.type == ONLOW) onlow = true;
-            else if(interrupt.type == ONHIGH) onhigh = true;
-            else if(interrupt.type == CHANGE) anyedge = true;
-        }
+    //
+    for(auto interrupt : interrupts) {
+        if(interrupt.type == RISING) rising = true;
+        else if(interrupt.type == FALLING) falling = true;
+        else if(interrupt.type == ONLOW) onlow = true;
+        else if(interrupt.type == ONHIGH) onhigh = true;
+        else if(interrupt.type == CHANGE) anyedge = true;
+    }
 
-
-        if(anyedge || (rising && falling) || (onlow && onhigh) || (rising && onlow) || (falling && onhigh)) {
-            gpio_set_intr_type(pinNum, GPIO_INTR_ANYEDGE);
-            ets_printf("gpio_set_intr_type %d GPIO_INTR_ANYEDGE!\n", pinNum);
-        }
-        else if (rising || onhigh) { // programmatically onhigh
-            gpio_set_intr_type(pinNum, GPIO_INTR_POSEDGE);
-            ets_printf("gpio_set_intr_type %d GPIO_INTR_POSEDGE!\n", pinNum);
-        }
-        else if (falling || onlow) { // programmatically onlow
-            gpio_set_intr_type(pinNum, GPIO_INTR_NEGEDGE);
-            ets_printf("gpio_set_intr_type %d GPIO_INTR_NEGEDGE!\n", pinNum);
-        }
+    // set active interrupt
+    if(anyedge || (rising && falling) || (onlow && onhigh) || (rising && onlow) || (falling && onhigh)) {
+        gpio_set_intr_type(pinNum, GPIO_INTR_ANYEDGE);
+        ESP_LOGD(TAG_PIN, "gpio_set_intr_type %d GPIO_INTR_ANYEDGE!", pinNum);
+    }
+    else if (rising || onhigh) { // programmatically onhigh
+        gpio_set_intr_type(pinNum, GPIO_INTR_POSEDGE);
+        ESP_LOGD(TAG_PIN, "gpio_set_intr_type %d GPIO_INTR_POSEDGE!", pinNum);
+    }
+    else if (falling || onlow) { // programmatically onlow
+        gpio_set_intr_type(pinNum, GPIO_INTR_NEGEDGE);
+        ESP_LOGD(TAG_PIN, "gpio_set_intr_type %d GPIO_INTR_NEGEDGE!", pinNum);
+    }
         
-        ESP_ERROR_CHECK(gpio_isr_handler_add(pinNum, ISR, (void*) this));
-    // });
+    ESP_ERROR_CHECK(gpio_isr_handler_add(pinNum, ISR, (void*) this));
 
+    //
     if(mode == Mode::Active) {
         setInterruptLevel(Mode::Active);
     }
     else if(mode == Mode::Light || mode == Mode::Deep) {
-
         // wakeup level selector
         bool high_level = false;
         bool low_level = false;
@@ -363,7 +364,7 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
                 low_level = true;
             }
 
-            //pins_mask |= (1ULL << int_params.pin);
+            pins_mask |= (1ULL << int_params.pinNum);
         }
 
         

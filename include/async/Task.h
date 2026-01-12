@@ -1,25 +1,12 @@
 #pragma once
 
 #include <functional>
-#include <async/Mode.h>
+#include <async/Definitions.h>
 #include <async/Duration.h>
 #include <async/Executor.h>
+#include <async/Logging.h>
 
 namespace async {
-
-enum Type {
-  REPEAT = 0,
-  DELAY = 10,
-  DEMAND = 20,
-  TICK = 30,
-  ONCE = 40,
-  INTERR = 50
-};
-
-enum Core {
-    CORE0 = 0,
-    CORE1 = 1
-};
 
 class Task;
 Task * onOnce(Core core, Task * task) ;
@@ -40,16 +27,22 @@ class Task {
 
     public: 
         Task(Type type, Mode mode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback)
-            : type(type), mode(mode), core(core), delay(delay), interval(interval), callback(callback) {}
+            : type(type), mode(mode), core(core), delay(delay), interval(interval), callback(callback) {
+                ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
+            }
             
         Task(Type type, Mode mode,Core core, Duration * delay, std::function<void(Task *)> callback)
-            : type(type), mode(mode), core(core), delay(delay), callback(callback) {}
+            : type(type), mode(mode), core(core), delay(delay), callback(callback) {
+                ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
+            }
 
         Task(Type type, Mode mode, Core core, std::function<void(Task *)> callback)
-            : type(type), mode(mode), core(core), callback(callback) {}
+            : type(type), mode(mode), core(core), callback(callback) {
+                ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
+            }
 
         ~Task() {
-            ets_printf("remove task mode %d, type %d!\n", mode, type);
+            ESP_LOGV(TAG_TASK, "Remove task mode %s, type %s!", modeToStr(mode), typeToStr(type));
             if(delay != nullptr) {
                 delete delay;
                 delay = nullptr;
@@ -62,10 +55,6 @@ class Task {
                 esp_timer_delete(*timer);
                 delete timer;
                 timer = nullptr;
-            }
-            if(value != nullptr) {
-                delete value;
-                value = nullptr;
             }
         }
 

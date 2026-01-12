@@ -45,7 +45,7 @@ class Duration {
          * ```
          */
         ~Duration() {
-            ets_printf("delete task!\n");
+            //ets_printf("delete task!\n");
         }
 
 

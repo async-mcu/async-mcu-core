@@ -5,19 +5,18 @@
 #include <algorithm>
 #include "esp_sleep.h"
 #include "driver/gptimer.h"
-#include "esp32-hal.h"
 #include "soc/rtc.h"
 #include "esp_system.h"
 #include "esp_private/panic_internal.h"
 #include "esp_heap_trace.h"
-#include "freertos/task.h"
 #include "esp_event.h"
 #include "esp_timer.h"
 #include "esp_event.h"
+#include "sys/time.h"
 #include <async/Duration.h>
 #include <async/Task.h>
-#include <async/Mode.h>
 #include <async/Interrupts.h>
+#include <async/Logging.h>
 
 #define CURRENT_CORE (esp_cpu_get_core_id() == 0 ? CORE0 : CORE1)
 #define DEEP_TASKS_STACK 50
@@ -29,6 +28,15 @@ RTC_DATA_ATTR uint64_t deepTasksTime[DEEP_TASKS_STACK]; // agata call dad
               uint64_t deepTasksTimeFast[DEEP_TASKS_STACK]; // agata call dad
 bool startFlag = false;
 bool timerIsRunning = false;
+
+
+bool tickTasksExists[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
+bool lightTasksExists[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
+bool coreCycleReady[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
+uint64_t minSleepTimeDeep[SOC_CPU_CORES_NUM] = INIT_ARRAY(UINT64_MAX, SOC_CPU_CORES_NUM);
+uint64_t minSleepTimeLight[SOC_CPU_CORES_NUM] = INIT_ARRAY(UINT64_MAX, SOC_CPU_CORES_NUM);
+volatile bool goToSleep = false;
+
 int activeTasksCount = 0;
 uint64_t rtcBoot = 0;
 TaskHandle_t taskLoopCore0;
@@ -307,7 +315,6 @@ Task * onOnce(std::function<void(Task *)> callback) {
  * @return Task* Pointer to the added task.
  */
 Task * onOnce(Core core, Task * task) {
-    ets_printf("onOnce core %d, size: %d!  \n", core, tasks[core].size());
     task->setCertainly(true);
     tasks[core].push_back(task);
     return task;
@@ -345,133 +352,156 @@ Task * onTick(std::function<void(Task *)> callback) {
 }
 
 void mainLoop(void * parameter) {
+    int core = (int) parameter;
     std::vector<Task *> toExecute;
-    std::vector<Task *>& tasks = *(std::vector<Task *> *)parameter;
+
+    ESP_LOGV(TAG_EXECUTOR, "mainLoop from core %d curr time: %llu", core, minSleepTimeLight[core]);
 
     while(true) {
-        uint64_t minSleepTimeDeep = UINT64_MAX;
-        uint64_t minSleepTimeLight = UINT64_MAX;
-
-        bool tickTasksExists = false;
-        bool lightTasksExists = false;
         uint64_t startCycleTime = esp_timer_get_time();
         uint64_t startCycleTimeWithRtc = rtcBoot + startCycleTime;
 
         toExecute.clear();
 
-        for(int i = 0; i < tasks.size(); i++) {
-            if(tasks[i]->isCertainly()) {
-                toExecute.push_back(tasks[i]);
-                tasks[i]->setCertainly(false);
-                
-                if(tasks[i]->getType() == Type::ONCE) {
-                    delete tasks[i]; // 1. Освобождаем память
+        lightTasksExists[core] = false;
+        tickTasksExists[core] = false;
+        coreCycleReady[core] = true;
+        minSleepTimeLight[core] = UINT64_MAX;
+        minSleepTimeDeep[core] = UINT64_MAX;
+
+        for(int i = 0; i < tasks[core].size(); i++) {
+            if(tasks[core][i]->isCertainly()) {
+                toExecute.push_back(tasks[core][i]);
+                tasks[core][i]->setCertainly(false);
+
+                if(tasks[core][i]->getType() == Type::ONCE) {
+                    delete tasks[core][i]; // 1. Освобождаем память
                 }
-                
-                tasks.erase(tasks.begin() + i);
+
+                tasks[core].erase(tasks[core].begin() + i);
                 i--;
             }
-            else if(tasks[i]->getType() == Type::TICK) {
+            else if(tasks[core][i]->getType() == Type::TICK) {
 
-                if(tasks[i]->getNext() != UINT64_MAX) {
-                    tickTasksExists = true;
-                    toExecute.push_back(tasks[i]);
+                if(tasks[core][i]->getNext() != UINT64_MAX) {
+                    tickTasksExists[core] = true;
+                    toExecute.push_back(tasks[core][i]);
                 }
                 else {
-                    delete tasks[i]; // 1. Освобождаем память
-                    tasks.erase(tasks.begin() + i);
+                    delete tasks[core][i]; // 1. Освобождаем память
+                    tasks[core].erase(tasks[core].begin() + i);
                     i--;
                 }
             }
-            else if(tasks[i]->getMode() == Mode::Light) {
-                if(tasks[i]->getNext() != UINT64_MAX) {
-                    lightTasksExists = true;
+            else if(tasks[core][i]->getMode() == Mode::Light) {
+                if(tasks[core][i]->getNext() != UINT64_MAX) {
+                    lightTasksExists[core] = true;
 
                     // проверяем, не пора ли задаче запускаться
-                    if(startCycleTime >= tasks[i]->getNext()) {
-                        toExecute.push_back(tasks[i]);
+                    if(startCycleTime >= tasks[core][i]->getNext()) {
+                        toExecute.push_back(tasks[core][i]);
                         
                         // если это повторяющаяся задача, то обновим ей время отчёта
-                        if(tasks[i]->getType() == REPEAT) {
-                            tasks[i]->setNext(tasks[i]->getNext() + tasks[i]->getInterval());
+                        if(tasks[core][i]->getType() == REPEAT) {
+                            tasks[core][i]->setNext(tasks[core][i]->getNext() + tasks[core][i]->getInterval());
                         }
                         // если это отложенная задача, то остановим её выполнение
                         else {
-                            tasks[i]->setNext(UINT64_MAX);
+                            tasks[core][i]->setNext(UINT64_MAX);
                         }
                     }
-                    else if(!tickTasksExists) {
-                        minSleepTimeLight = minSleepTimeLight < tasks[i]->getNext() ? minSleepTimeLight : tasks[i]->getNext();
+                    else if(!tickTasksExists[core]) {
+                        minSleepTimeLight[core] = minSleepTimeLight[core] < tasks[core][i]->getNext() ? minSleepTimeLight[core] : tasks[core][i]->getNext();
                     }
                 }
                 else {
-                    delete tasks[i]; // 1. Освобождаем память
-                    tasks.erase(tasks.begin() + i);
+                    delete tasks[core][i]; // 1. Освобождаем память
+                    tasks[core].erase(tasks[core].begin() + i);
                     i--;
                 }
             }
-            else if(tasks[i]->getMode() == Mode::Deep) {
+            else if(tasks[core][i]->getMode() == Mode::Deep) {
                 if(deepTasksTimeFast[i] != UINT64_MAX) {
                     if(startCycleTimeWithRtc >= deepTasksTimeFast[i]) {
-                        toExecute.push_back(tasks[i]);
+                        toExecute.push_back(tasks[core][i]);
                         
                         // если это повторяющаяся задача, то обновим ей время отчёта
-                        if(tasks[i]->getType() == REPEAT) {
-                            deepTasksTimeFast[i] += tasks[i]->getInterval();
+                        if(tasks[core][i]->getType() == REPEAT) {
+                            deepTasksTimeFast[i] += tasks[core][i]->getInterval();
                         }
                         // если это отложенная задача, то остановим её выполнение
                         else {
                             deepTasksTimeFast[i] = UINT64_MAX;
                         }
                     }
-                    else if(!tickTasksExists && !lightTasksExists) {
-                        minSleepTimeDeep = minSleepTimeDeep < deepTasksTimeFast[i] ? minSleepTimeDeep : deepTasksTimeFast[i];
+                    else if(!tickTasksExists[core] && !lightTasksExists[core]) {
+                        minSleepTimeDeep[core] = minSleepTimeDeep[core] < deepTasksTimeFast[i] ? minSleepTimeDeep[core] : deepTasksTimeFast[i];
                     }
                 }
             }
         }
 
         if(toExecute.size() > 0) {
+            coreCycleReady[core] = false;
+
             for(Task * task : toExecute) {
                 task->execute();
             }
         }
-        else if(tickTasksExists || activeTasksCount || interruptLevel == Mode::Active) {
+        else if(BOOL_OR(tickTasksExists, SOC_CPU_CORES_NUM) || activeTasksCount || interruptLevel == Mode::Active) {
             //
         }
-        else if(lightTasksExists || interruptLevel == Mode::Light) {
-            if(minSleepTimeLight != UINT64_MAX) {
-                esp_sleep_enable_timer_wakeup(minSleepTimeLight - esp_timer_get_time());
-                timerIsRunning = true;
-            }
-            else if(timerIsRunning) {
-                esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
-                timerIsRunning = false;
-            }
-            
-            if(interruptLevel == Mode::Light) {
-                esp_sleep_enable_gpio_wakeup();
-            }
+        else if(BOOL_AND(coreCycleReady, SOC_CPU_CORES_NUM) && (BOOL_OR(lightTasksExists, SOC_CPU_CORES_NUM) || interruptLevel == Mode::Light)) {
+            if(!goToSleep) {
+                goToSleep = true;
 
-            ets_printf("esp_light_sleep_start!\n");
-            esp_light_sleep_start();
+                if(MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) != UINT64_MAX) {
+                    esp_sleep_enable_timer_wakeup(MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) - esp_timer_get_time());
+                    timerIsRunning = true;
+                }
+                else if(timerIsRunning) {
+                    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+                    timerIsRunning = false;
+                }
+                
+                if(interruptLevel == Mode::Light) {
+                    esp_sleep_enable_gpio_wakeup();
+                }
+
+                ESP_LOGV(TAG_EXECUTOR, "esp_light_sleep_start from core %d curr time: %llu all time: %llu", core, minSleepTimeLight[core], MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM));
+                fflush(stdout);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                esp_light_sleep_start();
+                
+                coreCycleReady[core] = false;
+                goToSleep = false;
+            }
+            else {
+                //ESP_LOGV(TAG_EXECUTOR, "semaphore is not available for light sleep from core %d", core);
+            }   
         }
-        else {
-            for(int i=0; i < DEEP_TASKS_STACK; i++) {
-                deepTasksTime[i] = deepTasksTimeFast[i];
-            }
+        else if(BOOL_AND(coreCycleReady, SOC_CPU_CORES_NUM)) {
+            if(!goToSleep) {
+                goToSleep = true;
 
-            if(minSleepTimeDeep != UINT64_MAX) {
-                esp_sleep_enable_timer_wakeup(minSleepTimeDeep - rts_us());
-                timerIsRunning = true;
+                for(int i=0; i < DEEP_TASKS_STACK; i++) {
+                    deepTasksTime[i] = deepTasksTimeFast[i];
+                }
+
+                if(MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) != UINT64_MAX) {
+                    esp_sleep_enable_timer_wakeup(MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
+                    timerIsRunning = true;
+                }
+                else if(timerIsRunning) {
+                    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+                    timerIsRunning = false;
+                }
+        
+                ESP_LOGI(TAG_EXECUTOR, "esp_deep_sleep_start");
+                fflush(stdout);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                esp_deep_sleep_start();
             }
-            else if(timerIsRunning) {
-                esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
-                timerIsRunning = false;
-            }
-    
-            ets_printf("esp_deep_sleep_start!\n");
-            esp_deep_sleep_start();
         }
 
         vTaskDelay(1); // yield to other tasks
@@ -509,21 +539,15 @@ void start() {
 
     startFlag = true;
 
-    xTaskCreatePinnedToCore(mainLoop, // Task function.
-                    "",     // name of task. //
-                    10000,       // Stack size of task //
-                    &tasks[0],        // parameter of the task //
-                    1,           // priority of the task //
-                    &taskLoopCore0,      // Task handle to keep track of created task //
-                    0);          // pin task to core 0 // 
-
-    xTaskCreatePinnedToCore(mainLoop, // Task function.
-                    "",     // name of task. //
-                    10000,       // Stack size of task //
-                    &tasks[1],        // parameter of the task //
-                    1,           // priority of the task //
-                    &taskLoopCore1,      // Task handle to keep track of created task //
-                    1);          // pin task to core 0 // 
+    for(int core = 0; core < SOC_CPU_CORES_NUM; core++) {
+        xTaskCreatePinnedToCore(mainLoop, // Task function.
+                        "",     // name of task. //
+                        10000,       // Stack size of task //
+                        (void *) core,        // parameter of the task //
+                        1,           // priority of the task //
+                        &taskLoopCore0,      // Task handle to keep track of created task //
+                        core);          // pin task to core 0 // 
+    }
 }
 
 }
