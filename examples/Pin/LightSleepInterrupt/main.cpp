@@ -14,13 +14,25 @@ void setup() {
   esp_log_level_set("*", ESP_LOG_ERROR);
   esp_log_level_set(TAG_MAIN, ESP_LOG_VERBOSE);
   esp_log_level_set(TAG_PIN, ESP_LOG_VERBOSE);
-  esp_log_level_set(TAG_EXECUTOR, ESP_LOG_VERBOSE);
+  esp_log_level_set(TAG_EXECUTOR, ESP_LOG_DEBUG);
   esp_log_level_set(TAG_TASK, ESP_LOG_VERBOSE);
 
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
 
+  onRepeat<Light>(Duration::ms(2500), [](Task * task) {
+    ESP_LOGI(TAG_MAIN, "2.5 seconds passed core %d, time %llu ms, mem %d, free stack space0: %d, free stack space1: %d, tasks0 %d, tasks1 %d",
+      CURRENT_CORE, 
+      rts_ms(), 
+      heap_caps_get_free_size(MALLOC_CAP_INTERNAL), 
+      uxTaskGetStackHighWaterMark(taskLoopCore0),
+      uxTaskGetStackHighWaterMark(taskLoopCore1),
+      tasks[0].size(),
+      tasks[1].size());
+  });
+
   onRepeat<Light>(Duration::ms(10000), [](Task * task) {
-    ESP_LOGI(TAG_MAIN, "10 seconds passed, time %llu ms, mem %d, free stack space0: %d, free stack space1: %d, tasks0 %d, tasks1 %d", 
+    ESP_LOGI(TAG_MAIN, "10 seconds passed core %d, time %llu ms, mem %d, free stack space0: %d, free stack space1: %d, tasks0 %d, tasks1 %d", 
+      CURRENT_CORE, 
       rts_ms(), 
       heap_caps_get_free_size(MALLOC_CAP_INTERNAL), 
       uxTaskGetStackHighWaterMark(taskLoopCore0),
@@ -37,9 +49,9 @@ void setup() {
   });
   
   // multi interrupts on pin14_RTC
-  // pin14_RTC.onInterrupt<Light>(FALLING, []() {
-  //   ESP_LOGI(TAG_MAIN, "pin14_RTC onInterrupt::FALLING, time %llu ms", rts_ms());
-  // });
+  pin14_RTC.onInterrupt<Light>(FALLING, []() {
+    ESP_LOGI(TAG_MAIN, "pin14_RTC onInterrupt::FALLING, time %llu ms", rts_ms());
+  });
 
 //   pin14_RTC.onInterrupt<Light>(RISING, []() {
 //     Serial.printf("pin14_RTC onInterrupt::RISING, time %llu ms\n", rts_ms());

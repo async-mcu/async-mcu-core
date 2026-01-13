@@ -32,7 +32,7 @@ bool timerIsRunning = false;
 
 bool tickTasksExists[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
 bool lightTasksExists[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
-bool coreCycleReady[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
+bool coreSleepReady[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
 uint64_t minSleepTimeDeep[SOC_CPU_CORES_NUM] = INIT_ARRAY(UINT64_MAX, SOC_CPU_CORES_NUM);
 uint64_t minSleepTimeLight[SOC_CPU_CORES_NUM] = INIT_ARRAY(UINT64_MAX, SOC_CPU_CORES_NUM);
 volatile bool goToSleep = false;
@@ -365,7 +365,6 @@ void mainLoop(void * parameter) {
 
         lightTasksExists[core] = false;
         tickTasksExists[core] = false;
-        coreCycleReady[core] = true;
         minSleepTimeLight[core] = UINT64_MAX;
         minSleepTimeDeep[core] = UINT64_MAX;
 
@@ -382,7 +381,6 @@ void mainLoop(void * parameter) {
                 i--;
             }
             else if(tasks[core][i]->getType() == Type::TICK) {
-
                 if(tasks[core][i]->getNext() != UINT64_MAX) {
                     tickTasksExists[core] = true;
                     toExecute.push_back(tasks[core][i]);
@@ -441,18 +439,28 @@ void mainLoop(void * parameter) {
             }
         }
 
+        // if(core == 1) {
+        //     ESP_LOGV(TAG_EXECUTOR, "tasks %d, core %d, core ready %d, %d, light sleep %d, %d: %d", 
+        //         tasks[core].size(), 
+        //         core, coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1], BOOL_OR(lightTasksExists, SOC_CPU_CORES_NUM));
+        // }
+
+        const bool tickTasksExistsFinal = BOOL_OR(tickTasksExists, SOC_CPU_CORES_NUM);
+        const bool lightTasksExistsFinal = BOOL_OR(lightTasksExists, SOC_CPU_CORES_NUM);
+        const bool coreSleepReadyFinal = BOOL_AND(coreSleepReady, SOC_CPU_CORES_NUM);
+
         if(toExecute.size() > 0) {
-            coreCycleReady[core] = false;
+            coreSleepReady[core] = false;
 
             for(Task * task : toExecute) {
                 task->execute();
             }
         }
-        else if(BOOL_OR(tickTasksExists, SOC_CPU_CORES_NUM) || activeTasksCount || interruptLevel == Mode::Active) {
+        else if(tickTasksExistsFinal || activeTasksCount > 0 || interruptLevel == Mode::Active) {
             //
         }
-        else if(BOOL_AND(coreCycleReady, SOC_CPU_CORES_NUM) && (BOOL_OR(lightTasksExists, SOC_CPU_CORES_NUM) || interruptLevel == Mode::Light)) {
-            if(!goToSleep) {
+        else if(!goToSleep && (lightTasksExistsFinal || interruptLevel == Mode::Light)) {
+            if(coreSleepReadyFinal) {
                 goToSleep = true;
 
                 if(MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) != UINT64_MAX) {
@@ -468,39 +476,48 @@ void mainLoop(void * parameter) {
                     esp_sleep_enable_gpio_wakeup();
                 }
 
+                ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, light sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
                 ESP_LOGV(TAG_EXECUTOR, "esp_light_sleep_start from core %d curr time: %llu all time: %llu", core, minSleepTimeLight[core], MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM));
                 fflush(stdout);
                 vTaskDelay(pdMS_TO_TICKS(100));
                 esp_light_sleep_start();
-                
-                coreCycleReady[core] = false;
+
+                coreSleepReady[core] = false;
                 goToSleep = false;
             }
             else {
-                //ESP_LOGV(TAG_EXECUTOR, "semaphore is not available for light sleep from core %d", core);
-            }   
+                coreSleepReady[core] = true;
+            }
         }
-        else if(BOOL_AND(coreCycleReady, SOC_CPU_CORES_NUM)) {
-            if(!goToSleep) {
+        else if(!goToSleep) {
+            if(coreSleepReadyFinal) {
                 goToSleep = true;
 
-                for(int i=0; i < DEEP_TASKS_STACK; i++) {
-                    deepTasksTime[i] = deepTasksTimeFast[i];
-                }
+                    for(int i=0; i < DEEP_TASKS_STACK; i++) {
+                        deepTasksTime[i] = deepTasksTimeFast[i];
+                    }
 
-                if(MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) != UINT64_MAX) {
-                    esp_sleep_enable_timer_wakeup(MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
-                    timerIsRunning = true;
-                }
-                else if(timerIsRunning) {
-                    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
-                    timerIsRunning = false;
-                }
-        
-                ESP_LOGI(TAG_EXECUTOR, "esp_deep_sleep_start");
-                fflush(stdout);
-                vTaskDelay(pdMS_TO_TICKS(100));
-                esp_deep_sleep_start();
+                    if(MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) != UINT64_MAX) {
+                        esp_sleep_enable_timer_wakeup(MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
+                        timerIsRunning = true;
+                    }
+                    else if(timerIsRunning) {
+                        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+                        timerIsRunning = false;
+                    }
+            
+                    ESP_LOGV(TAG_EXECUTOR, "tasks %d, core %d, core ready %d, %d: %d, light sleep %d, %d: %d", 
+                        tasks[core].size(), 
+                        core, coreSleepReady[0], coreSleepReady[1], coreSleepReadyFinal, lightTasksExists[0], lightTasksExists[1], lightTasksExistsFinal);
+
+                    //ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, light sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
+                    ESP_LOGV(TAG_EXECUTOR, "esp_deep_sleep_start");
+                    fflush(stdout);
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    esp_deep_sleep_start();
+            }
+            else {
+                coreSleepReady[core] = true;
             }
         }
 
