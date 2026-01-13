@@ -235,7 +235,7 @@ public:
 inline void Pin::ISR(void* arg) {
     Pin *instance = (Pin*) arg;
     //ets_printf("Wakeup!\n");
-    //gpio_intr_disable(instance->getPin());
+    gpio_intr_disable(instance->getPin());
     instance->interrupt();
 }
 
@@ -263,16 +263,19 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
     if(interruptTask == nullptr) {
         interruptTask = onDemand([this](Task * demandTask) {
             int value = (int) demandTask->getValue();
-            //ets_printf("onDemand!\n");
-            // revert = !revert;
-            // if(revert) {
-            //     gpio_wakeup_enable(pinNum, (currentMode != INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
-            // }
-            // else {
-            //     gpio_wakeup_enable(pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
-            // }
+            ets_printf("onDemand!\n");
+
+            if(mode == Mode::Deep || mode == Mode::Light) {
+                revert = !revert;
+                if(revert) {
+                    gpio_wakeup_enable(pinNum, (currentMode != INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+                }
+                else {
+                    gpio_wakeup_enable(pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+                }
+            }
             
-            // gpio_intr_enable(getPin());
+            gpio_intr_enable(pinNum);
 
             for(auto interrupt : interrupts) {
                 if(interrupt.type == ONLOW && value == LOW) {
@@ -367,7 +370,6 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
             pins_mask |= (1ULL << int_params.pinNum);
         }
 
-        
         // if(high_level && low_level) {
         //     esp_system_abort("In deep/light sleep mode, interrupts for all pins must be the same.");
         // }

@@ -477,7 +477,7 @@ void mainLoop(void * parameter) {
                 }
 
                 ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, light sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
-                ESP_LOGV(TAG_EXECUTOR, "esp_light_sleep_start from core %d curr time: %llu all time: %llu", core, minSleepTimeLight[core], MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM));
+                ESP_LOGD(TAG_EXECUTOR, "esp_light_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) - esp_timer_get_time());
                 fflush(stdout);
                 vTaskDelay(pdMS_TO_TICKS(100));
                 esp_light_sleep_start();

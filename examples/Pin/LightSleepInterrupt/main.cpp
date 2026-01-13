@@ -19,7 +19,7 @@ void setup() {
 
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
 
-  onRepeat<Light>(Duration::ms(2500), [](Task * task) {
+  onRepeat<Light>(Duration::ms(2500), CORE0, [](Task * task) {
     ESP_LOGI(TAG_MAIN, "2.5 seconds passed core %d, time %llu ms, mem %d, free stack space0: %d, free stack space1: %d, tasks0 %d, tasks1 %d",
       CURRENT_CORE, 
       rts_ms(), 
@@ -30,7 +30,7 @@ void setup() {
       tasks[1].size());
   });
 
-  onRepeat<Light>(Duration::ms(10000), [](Task * task) {
+  onRepeat<Light>(Duration::ms(10000), CORE1, [](Task * task) {
     ESP_LOGI(TAG_MAIN, "10 seconds passed core %d, time %llu ms, mem %d, free stack space0: %d, free stack space1: %d, tasks0 %d, tasks1 %d", 
       CURRENT_CORE, 
       rts_ms(), 
@@ -49,34 +49,35 @@ void setup() {
   });
   
   // multi interrupts on pin14_RTC
+  pin14_RTC.onInterrupt<Light>(RISING, []() {
+    ESP_LOGI(TAG_MAIN, "pin14_RTC onInterrupt::RISING, time %llu ms", rts_ms());
+
+    pin19_RTC.onInterrupt<Active>(RISING, []() {
+      ESP_LOGI(TAG_MAIN, "pin19_RTC onInterrupt::RISING, time %llu ms", rts_ms());
+    });
+  });
+
   pin14_RTC.onInterrupt<Light>(FALLING, []() {
     ESP_LOGI(TAG_MAIN, "pin14_RTC onInterrupt::FALLING, time %llu ms", rts_ms());
   });
 
-//   pin14_RTC.onInterrupt<Light>(RISING, []() {
-//     Serial.printf("pin14_RTC onInterrupt::RISING, time %llu ms\n", rts_ms());
-//   });
+  pin14_RTC.onInterrupt<Light>(ONLOW, []() {
+    ESP_LOGI(TAG_MAIN, "pin14_RTC onInterrupt::ONLOW, time %llu ms", rts_ms());
+  });
 
-//   pin14_RTC.onInterrupt<Active>(FALLING, []() {
-//     Serial.printf("pin14_RTC onInterrupt::FALLING, time %llu ms\n", rts_ms());
-//   });
+  // multi interrupts on pin19_RTC
+  pin19_RTC.onInterrupt<Light>(FALLING, []() {
+    ESP_LOGI(TAG_MAIN, "pin19_RTC onInterrupt::FALLING, time %llu ms", rts_ms());
+  });
 
-//   // single interrupt on pin19_RTC creating another interrupt on pin14_RTC
-//   pin19_RTC.onInterrupt<Active>(RISING, []() {
-//     Serial.printf("pin19_RTC onInterrupt::RISING, time %llu ms\n", rts_ms());
+  pin19_RTC.onInterrupt<Light>(ONHIGH, []() {
+    ESP_LOGI(TAG_MAIN, "pin19_RTC onInterrupt::ONHIGH, time %llu ms", rts_ms());
+  });
 
-//     pin14_RTC.onInterrupt<Active>(RISING, []() {
-//       Serial.printf("pin14_RTC onInterrupt::RISING, time %llu ms\n", rts_ms());
-//     });
-//   });
-
-//   pin19_RTC.onInterrupt<Active>(FALLING, []() {
-//     Serial.printf("pin19_RTC onInterrupt::FALLING, time %llu ms\n", rts_ms());
-//   });
 
   start();
 };
 
 void loop() {
-  //vTaskDelete(NULL);
+  vTaskDelete(NULL);
 }
