@@ -11,25 +11,6 @@
 #include <async/Executor.h>
 #include <async/Interrupts.h>
 
-// Arduino-style константы
-#define LOW               0x0
-#define HIGH              0x1
-#define INPUT             0x01
-#define OUTPUT            0x03 
-#define PULLUP            0x04
-#define INPUT_PULLUP      0x05
-#define PULLDOWN          0x08
-#define INPUT_PULLDOWN    0x09
-#define OPEN_DRAIN        0x10
-#define OUTPUT_OPEN_DRAIN 0x13
-#define ANALOG            0xC0
-#define OUTPUT_ANALOG     0xC3  // OUTPUT (0x03) | ANALOG (0xC0)
-
-#define RISING    GPIO_INTR_POSEDGE
-#define FALLING   GPIO_INTR_NEGEDGE
-#define CHANGE    GPIO_INTR_ANYEDGE
-#define ONLOW     GPIO_INTR_LOW_LEVEL
-#define ONHIGH    GPIO_INTR_HIGH_LEVEL
 
 // Метки для шаблонов прерываний
 namespace async {
@@ -42,7 +23,9 @@ bool isValidRtcPin(int pin) {
     return false;
 }
 
-RTC_DATA_ATTR uint64_t deepInterrupts[DEEP_TASKS_STACK]; // agata call dad
+extern std::vector<interrupt_params> globalInterrupts;
+extern uint64_t pinsMask;
+extern int deepInterruptsMode;
 //extern std::vector<interrupt_params> interrupts;
 bool isrServiceInstalled = false;
 
@@ -59,6 +42,7 @@ private:
     bool revert = false;
     bool interrupted = false;
     int level;
+    int globalInterruptNumber;
     std::vector<interrupt_params> interrupts;
     Task * interruptTask = nullptr;
 
@@ -234,8 +218,8 @@ public:
 
 inline void Pin::ISR(void* arg) {
     Pin *instance = (Pin*) arg;
-    //ets_printf("Wakeup!\n");
     gpio_intr_disable(instance->getPin());
+    ets_printf("ISR pin %d!\n", instance->getPin());
     instance->interrupt();
 }
 
@@ -248,9 +232,12 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
         .callback = callback
     });
 
+    globalInterruptNumber = globalInterrupts.size();
     globalInterrupts.push_back((interrupt_params) {
         .type = type,
-        .pinNum = pinNum
+        .pinNum = pinNum,
+        .pinMode = currentMode,
+        .sleepMode = mode
     });
 
     // first install isr service
@@ -263,14 +250,18 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
     if(interruptTask == nullptr) {
         interruptTask = onDemand([this](Task * demandTask) {
             int value = (int) demandTask->getValue();
-            ets_printf("onDemand!\n");
+            
+            //ets_printf("onDemand!\n");
 
             if(mode == Mode::Deep || mode == Mode::Light) {
                 revert = !revert;
+
                 if(revert) {
+                    ESP_LOGV(TAG_PIN, "gpio_wakeup_enable revert pin %d to %d", pinNum, (currentMode != INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
                     gpio_wakeup_enable(pinNum, (currentMode != INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
                 }
                 else {
+                    ESP_LOGV(TAG_PIN, "gpio_wakeup_enable pin %d to %d", pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
                     gpio_wakeup_enable(pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
                 }
             }
@@ -353,70 +344,44 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
     if(mode == Mode::Active) {
         setInterruptLevel(Mode::Active);
     }
-    else if(mode == Mode::Light || mode == Mode::Deep) {
-        // wakeup level selector
-        bool high_level = false;
-        bool low_level = false;
-        uint64_t pins_mask = 0;
+    else if(mode == Mode::Light) {
+        setInterruptLevel(Mode::Light);
+        ESP_LOGD(TAG_PIN, "gpio_wakeup_enable pin %d to %d", pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+        gpio_wakeup_enable(pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+    }
+    else if(mode == Mode::Deep) {
+        setInterruptLevel(Mode::Deep);
 
-        for(interrupt_params int_params : interrupts) {
-            if(int_params.type == ONHIGH || int_params.type == RISING) {
-                high_level = true;
-            }
-            else if(int_params.type == ONLOW || int_params.type == FALLING) {
-                low_level = true;
-            }
+        ESP_LOGD(TAG_PIN, "gpio_wakeup_enable from deep pin %d to %d", pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+        gpio_wakeup_enable(pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
 
-            pins_mask |= (1ULL << int_params.pinNum);
+        if(!isValidRtcPin(pinNum)) {
+            esp_system_abort("Pin is not RTC!");
         }
 
-        // if(high_level && low_level) {
-        //     esp_system_abort("In deep/light sleep mode, interrupts for all pins must be the same.");
-        // }
-        // else if(!high_level && !low_level) {
-        //     esp_system_abort("In deep/light sleep mode, interrupts for all pins must be ONHIGH/RISING or ONLOW/FALLING.");
-        // }
+        for(interrupt_params int_params : globalInterrupts) {
+            if(int_params.pinMode != currentMode && int_params.sleepMode == Mode::Deep) {
+                esp_system_abort("In deep sleep mode, modes for all pins must be the same (INPUT_PULLUP or INPUTPULLDOWN)");
+            }
 
-        if(mode == Mode::Light) {
-            setInterruptLevel(Mode::Light);
-            gpio_wakeup_enable(pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+            pinsMask |= (1ULL << int_params.pinNum);
         }
-        else if(mode == Mode::Deep) {
-            setInterruptLevel(Mode::Deep);
-
-            if(!isValidRtcPin(pinNum)) {
-                esp_system_abort("Pin is not RTC!");
-            }
-
-            if(interrupts.size() == 1) { // low energy ext0 if only one pin
-                esp_sleep_enable_ext0_wakeup(pinNum, currentMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
-            }
-            else {
-                esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
-                esp_sleep_enable_ext1_wakeup(pins_mask, currentMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
-            }
                 
-            esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+        esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
         
-            // Если при запуске выяснилось, что проснулись из-за этого пина - вызываем сразу
-            if (cause == ESP_SLEEP_WAKEUP_EXT0) {
+        if (cause == ESP_SLEEP_WAKEUP_EXT0 || cause == ESP_SLEEP_WAKEUP_EXT1) {
+            bool shouldInterrupt = (cause == ESP_SLEEP_WAKEUP_EXT0)
+                || (currentMode == INPUT_PULLUP) 
+                || (digitalRead() == (currentMode == INPUT_PULLDOWN ? HIGH : LOW)) 
+                || (esp_sleep_get_ext1_wakeup_status() & (1ULL << pinNum));
+            
+            if (shouldInterrupt) {
                 interrupt();
-            }
-            else if (cause == ESP_SLEEP_WAKEUP_EXT1) {
-                if(low_level) {
-                    interrupt();
-                }
-                else {
-                    uint64_t status = esp_sleep_get_ext1_wakeup_status();
-                    if (digitalRead() == (high_level ? HIGH : LOW) || status & (1ULL << pinNum)) {
-                        interrupt();
-                    }
-                }
+                deepInterruptsMode = !deepInterruptsMode;
             }
         }
     }
 }
-
 
 // Инициализация статики
 adc_oneshot_unit_handle_t Pin::adc1Handle = nullptr;

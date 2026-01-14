@@ -35,6 +35,30 @@
 #define INIT_ARRAY_N(n, val) INIT_ARRAY_##n(val)
 #define INIT_ARRAY(val, n) INIT_ARRAY_N(n, val)
 
+//
+#define CURRENT_CORE (esp_cpu_get_core_id() == 0 ? CORE0 : CORE1)
+#define DEEP_TASKS_STACK 50
+
+// Arduino-style константы
+#define LOW               0x0
+#define HIGH              0x1
+#define INPUT             0x01
+#define OUTPUT            0x03 
+#define PULLUP            0x04
+#define INPUT_PULLUP      0x05
+#define PULLDOWN          0x08
+#define INPUT_PULLDOWN    0x09
+#define OPEN_DRAIN        0x10
+#define OUTPUT_OPEN_DRAIN 0x13
+#define ANALOG            0xC0
+#define OUTPUT_ANALOG     0xC3  // OUTPUT (0x03) | ANALOG (0xC0)
+
+#define RISING    GPIO_INTR_POSEDGE
+#define FALLING   GPIO_INTR_NEGEDGE
+#define CHANGE    GPIO_INTR_ANYEDGE
+#define ONLOW     GPIO_INTR_LOW_LEVEL
+#define ONHIGH    GPIO_INTR_HIGH_LEVEL
+
 // Определения для асинхронного выполнения задач
 namespace async {
   enum Mode { 
