@@ -9,7 +9,7 @@
 #include "esp_attr.h"
 #include "esp_heap_trace.h"
 #include <async/Executor.h>
-#include <async/Interrupts.h>
+#include <async/Interrupt.h>
 
 
 // Метки для шаблонов прерываний
@@ -23,7 +23,7 @@ bool isValidRtcPin(int pin) {
     return false;
 }
 
-extern std::vector<interrupt_params> globalInterrupts;
+extern std::vector<Interrupt *> globalInterruptParams;
 extern uint64_t pinsMask;
 extern int deepInterruptsMode;
 //extern std::vector<interrupt_params> interrupts;
@@ -42,8 +42,7 @@ private:
     bool revert = false;
     bool interrupted = false;
     int level;
-    int globalInterruptNumber;
-    std::vector<interrupt_params> interrupts;
+    std::vector<Interrupt *> interruptParams;
     Task * interruptTask = nullptr;
 
     // Ресурсы АЦП
@@ -212,33 +211,44 @@ public:
 
     // --- Прерывания и Сон ---
     template<Mode mode>
-    void onInterrupt(gpio_int_type_t type, std::function<void(void)> callback); 
+    Interrupt * addInterrupt(gpio_int_type_t type, std::function<void(Interrupt *)> callback); 
+
+    void removeInterrupt(Interrupt * task) {
+        ESP_LOGD(TAG_PIN, "Remove interrupt pin %d", pinNum);
+
+        interruptParams.erase(std::remove(interruptParams.begin(), interruptParams.end(), task), interruptParams.end());
+        globalInterruptParams.erase(std::remove(globalInterruptParams.begin(), globalInterruptParams.end(), task), globalInterruptParams.end());
+
+        if(interruptParams.size() == 0) {
+            ESP_LOGD(TAG_PIN, "gpio_intr_disable pin %d!", pinNum);
+            gpio_intr_disable(getPin());
+            gpio_wakeup_disable(getPin());
+            pinsMask &= ~(1ULL << pinNum);
+        }
+    }
+
     static void ISR(void* arg);
 };
 
 inline void Pin::ISR(void* arg) {
     Pin *instance = (Pin*) arg;
     gpio_intr_disable(instance->getPin());
-    ets_printf("ISR pin %d!\n", instance->getPin());
+    //ets_printf("ISR pin %d!\n", instance->getPin());
     instance->interrupt();
 }
 
 // Реализация в конце файла
 template<Mode mode>
-inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> callback) {
-    // add callback to list
-    interrupts.push_back((interrupt_params) {
-        .type = type,
-        .callback = callback
-    });
+inline Interrupt * Pin::addInterrupt(gpio_int_type_t type, std::function<void(Interrupt *)> callback) {
+    if((pinsMask & (1ULL << pinNum)) == 0) {
+        pinsMask |= (1ULL << pinNum);
+    }
 
-    globalInterruptNumber = globalInterrupts.size();
-    globalInterrupts.push_back((interrupt_params) {
-        .type = type,
-        .pinNum = pinNum,
-        .pinMode = currentMode,
-        .sleepMode = mode
-    });
+    auto interruptParam = new Interrupt(this, type, mode, callback);
+
+    // add callback to list
+    interruptParams.push_back(interruptParam);
+    globalInterruptParams.push_back(interruptParam);
 
     // first install isr service
     if (!isrServiceInstalled) {
@@ -250,8 +260,7 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
     if(interruptTask == nullptr) {
         interruptTask = onDemand([this](Task * demandTask) {
             int value = (int) demandTask->getValue();
-            
-            //ets_printf("onDemand!\n");
+            ESP_LOGV(TAG_PIN, "onDemand pin %d", pinNum);
 
             if(mode == Mode::Deep || mode == Mode::Light) {
                 revert = !revert;
@@ -268,40 +277,39 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
             
             gpio_intr_enable(pinNum);
 
-            for(auto interrupt : interrupts) {
-                if(interrupt.type == ONLOW && value == LOW) {
-                    onTick([interrupt, this](Task * tickTask) {
-                        //ets_printf("onTick!\n");
+            for(auto interruptParam : interruptParams) {
+                if(interruptParam->type == ONLOW && value == LOW) {
+                    onTick([interruptParam, this](Task * tickTask) {
                         int value = digitalRead();
 
                         if(value == HIGH) {
                             tickTask->cancel();
                         }
                         else {
-                            interrupt.callback();
+                            interruptParam->callback(interruptParam);
                         }
                     });
                 }
-                else if(interrupt.type == ONHIGH && value == HIGH) {
-                    onTick([interrupt, this](Task * tickTask) {
+                else if(interruptParam->type == ONHIGH && value == HIGH) {
+                    onTick([interruptParam, this](Task * tickTask) {
                         int value = digitalRead();
 
                         if(value == LOW) {
                             tickTask->cancel();
                         }
                         else {
-                            interrupt.callback();
+                            interruptParam->callback(interruptParam);
                         }
                     });
                 }
-                else if(interrupt.type == RISING && value == HIGH) {
-                    interrupt.callback();
+                else if(interruptParam->type == RISING && value == HIGH) {
+                    interruptParam->callback(interruptParam);
                 }
-                else if(interrupt.type == FALLING && value == LOW) {
-                    interrupt.callback();
+                else if(interruptParam->type == FALLING && value == LOW) {
+                    interruptParam->callback(interruptParam);
                 }
-                else if(interrupt.type == CHANGE) {
-                    interrupt.callback();
+                else if(interruptParam->type == CHANGE) {
+                    interruptParam->callback(interruptParam);
                 }
             }
 
@@ -316,12 +324,12 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
     bool anyedge = false;
 
     //
-    for(auto interrupt : interrupts) {
-        if(interrupt.type == RISING) rising = true;
-        else if(interrupt.type == FALLING) falling = true;
-        else if(interrupt.type == ONLOW) onlow = true;
-        else if(interrupt.type == ONHIGH) onhigh = true;
-        else if(interrupt.type == CHANGE) anyedge = true;
+    for(auto interruptParam : interruptParams) {
+        if(interruptParam->type == RISING) rising = true;
+        else if(interruptParam->type == FALLING) falling = true;
+        else if(interruptParam->type == ONLOW) onlow = true;
+        else if(interruptParam->type == ONHIGH) onhigh = true;
+        else if(interruptParam->type == CHANGE) anyedge = true;
     }
 
     // set active interrupt
@@ -359,33 +367,55 @@ inline void Pin::onInterrupt(gpio_int_type_t type, std::function<void(void)> cal
             esp_system_abort("Pin is not RTC!");
         }
 
-        for(interrupt_params int_params : globalInterrupts) {
-            if(int_params.pinMode != currentMode && int_params.sleepMode == Mode::Deep) {
-                esp_system_abort("In deep sleep mode, modes for all pins must be the same (INPUT_PULLUP or INPUTPULLDOWN)");
+        for(Interrupt * interruptParam : globalInterruptParams) {
+            if(interruptParam->pin->getMode() != currentMode && interruptParam->sleepMode == Mode::Deep) {
+                esp_system_abort("In deep sleep mode, modes for all pins must be the same (INPUT_PULLUP or INPUT_PULLDOWN)");
             }
-
-            pinsMask |= (1ULL << int_params.pinNum);
         }
+
+        deepInterruptsMode = currentMode;
                 
         esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
         
         if (cause == ESP_SLEEP_WAKEUP_EXT0 || cause == ESP_SLEEP_WAKEUP_EXT1) {
+            ESP_LOGV(TAG_PIN, "Wakeup from deep on pin %d, ext0 %d, digitalRead %d, wakeup: %d", pinNum, cause == ESP_SLEEP_WAKEUP_EXT0, digitalRead(), (esp_sleep_get_ext1_wakeup_status() & (1ULL << pinNum)));
+
             bool shouldInterrupt = (cause == ESP_SLEEP_WAKEUP_EXT0)
                 || (currentMode == INPUT_PULLUP) 
-                || (digitalRead() == (currentMode == INPUT_PULLDOWN ? HIGH : LOW)) 
+                || (digitalRead() == !deepInterruptsRevert ? (currentMode == INPUT_PULLDOWN ? HIGH : LOW) : (currentMode != INPUT_PULLDOWN ? HIGH : LOW)) 
                 || (esp_sleep_get_ext1_wakeup_status() & (1ULL << pinNum));
             
             if (shouldInterrupt) {
-                interrupt();
-                deepInterruptsMode = !deepInterruptsMode;
+                this->interrupt();
             }
         }
     }
+
+    return interruptParam;
 }
 
 // Инициализация статики
 adc_oneshot_unit_handle_t Pin::adc1Handle = nullptr;
 bool Pin::adcUnitInit = false;
+
+//
+inline Interrupt::Interrupt(Pin *p, gpio_int_type_t intType, Mode sleep, 
+                            std::function<void(Interrupt *)> cb)
+        : pin(p), type(intType), sleepMode(sleep), callback(cb) {
+        ESP_LOGD(TAG_INTERRUPT, "Create interrupt pin %d, type: %d, pinMode: %d, sleepMode %s", 
+                pin->getPin(), type, pin->getMode(), modeToStr(sleepMode));
+    }
+
+inline Interrupt::~Interrupt() {
+    pin->removeInterrupt(this);
+    ESP_LOGD(TAG_INTERRUPT, "Delete interrupt pin %d, type: %d, sleepMode: %s", pin ? pin->getPin() : -1, type, modeToStr(sleepMode));
+}
+
+inline void Interrupt::cancel() {
+    ESP_LOGD(TAG_INTERRUPT, "Cancel interrupt pin %d", pin->getPin());
+    pin->removeInterrupt(this);
+    ESP_LOGD(TAG_INTERRUPT, "Cancel interrupt on pin %d", pin->getPin());
+}
 
 }
 

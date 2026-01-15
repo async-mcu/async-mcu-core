@@ -324,4 +324,6 @@ namespace async {
       };
       ///@}
   };
+
+  inline Time Time::SYSTEM_TIME = Time(0);
 };

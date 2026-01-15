@@ -15,8 +15,8 @@
 #include "sys/time.h"
 #include <async/Duration.h>
 #include <async/Task.h>
-#include <async/Interrupts.h>
 #include <async/Logging.h>
+#include <async/Interrupt.h>
 
 namespace async {
 std::vector<Task *> tasks[2];
@@ -38,7 +38,7 @@ uint64_t rtcBoot = 0;
 TaskHandle_t taskLoopCore0;
 TaskHandle_t taskLoopCore1;
 
-extern std::vector<interrupt_params> globalInterrupts;
+extern std::vector<Interrupt *> globalInterruptParams;
 extern uint64_t pinsMask;
 extern bool deepInterruptsRevert;
 extern int deepInterruptsMode;
@@ -508,43 +508,38 @@ void mainLoop(void * parameter) {
                         timerIsRunning = false;
                     }
             
-                    ESP_LOGV(TAG_EXECUTOR, "tasks %d, core %d, core ready %d, %d: %d, light sleep %d, %d: %d", 
-                        tasks[core].size(), 
-                        core, coreSleepReady[0], coreSleepReady[1], coreSleepReadyFinal, lightTasksExists[0], lightTasksExists[1], lightTasksExistsFinal);
+                    int countPins = __builtin_popcountll(pinsMask);
 
-                    //ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, light sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
-                    //ESP_LOGV(TAG_EXECUTOR, "esp_deep_sleep_start");
-                    ESP_LOGD(TAG_EXECUTOR, "esp_deep_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - esp_timer_get_time());
-
-                    fflush(stdout);
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                        
-                    if(globalInterrupts.size() == 1) { // low energy ext0 if only one pin
+                    if(countPins == 1) { // low energy ext0 if only one pin
                         ESP_LOGV(TAG_EXECUTOR, "get deepInterruptsRevert = %d", deepInterruptsRevert);
-
+                        
                         if(!deepInterruptsRevert) {
-                            ESP_LOGD(TAG_EXECUTOR, "esp_sleep_enable_ext0_wakeup to %d", deepInterruptsMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
-                            esp_sleep_enable_ext0_wakeup((gpio_num_t) pinsMask, deepInterruptsMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+                            ESP_LOGD(TAG_EXECUTOR, "esp_sleep_enable_ext0_wakeup pin %llu to %d", __builtin_ctzll(pinsMask), deepInterruptsMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+                            esp_sleep_enable_ext0_wakeup((gpio_num_t) __builtin_ctzll(pinsMask), deepInterruptsMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
                         }
                         else {
-                            ESP_LOGD(TAG_EXECUTOR, "esp_sleep_enable_ext0_wakeup revert to %d", deepInterruptsMode != INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
-                            esp_sleep_enable_ext0_wakeup((gpio_num_t) pinsMask, deepInterruptsMode != INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+                            ESP_LOGD(TAG_EXECUTOR, "esp_sleep_enable_ext0_wakeup pin %llu revert to %d", __builtin_ctzll(pinsMask), deepInterruptsMode != INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+                            esp_sleep_enable_ext0_wakeup((gpio_num_t) __builtin_ctzll(pinsMask), deepInterruptsMode != INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
                         }
                     }
-                    else {
+                    else if(countPins > 1) { // ext1 if multiple pins
                         esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
 
                         if(!deepInterruptsRevert) {
-                            ESP_LOGD(TAG_EXECUTOR, "esp_sleep_enable_ext1_wakeup to %d", deepInterruptsMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
-                            esp_sleep_enable_ext1_wakeup(pinsMask, deepInterruptsMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+                            ESP_LOGD(TAG_EXECUTOR, "esp_sleep_enable_ext1_wakeup mask %llu to %d", pinsMask, deepInterruptsMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+                            esp_sleep_enable_ext1_wakeup_io(pinsMask, deepInterruptsMode == INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
                         }
                         else {
-                            ESP_LOGD(TAG_EXECUTOR, "esp_sleep_enable_ext1_wakeup revert to %d", deepInterruptsMode != INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
-                            esp_sleep_enable_ext1_wakeup(pinsMask, deepInterruptsMode != INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+                            ESP_LOGD(TAG_EXECUTOR, "esp_sleep_enable_ext1_wakeup mask %llu revert to %d", pinsMask, deepInterruptsMode != INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
+                            esp_sleep_enable_ext1_wakeup_io(pinsMask, deepInterruptsMode != INPUT_PULLDOWN ? ESP_EXT1_WAKEUP_ANY_HIGH : ESP_EXT1_WAKEUP_ALL_LOW);
                         }
                     }
 
 
+                    ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, deep sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
+                    ESP_LOGD(TAG_EXECUTOR, "esp_deep_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) - esp_timer_get_time());
+                    fflush(stdout);
+                    vTaskDelay(pdMS_TO_TICKS(100));
                     esp_deep_sleep_start();
             }
             else {
@@ -583,6 +578,11 @@ void start() {
 
     for(int i=0; i < DEEP_TASKS_STACK; i++) {
         deepTasksTimeFast[i] = deepTasksTime[i];
+    }
+
+    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    if (cause == ESP_SLEEP_WAKEUP_EXT0 || cause == ESP_SLEEP_WAKEUP_EXT1) {
+        deepInterruptsRevert = !deepInterruptsRevert;
     }
 
     startFlag = true;
