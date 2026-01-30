@@ -30,9 +30,7 @@ class Duration {
          * Duration d2 = Duration::ms(1); // 1 millisecond = 1000 microseconds
          * ```
          */
-        Duration(uint64_t us) {
-            valueMicros = us;
-        }
+        Duration(uint64_t us);
 
     public:
         /**
@@ -44,9 +42,7 @@ class Duration {
          * delete d;
          * ```
          */
-        ~Duration() {
-            //ets_printf("delete task!\n");
-        }
+        ~Duration();
 
 
 
@@ -60,9 +56,7 @@ class Duration {
          * d.set(5000); // Set to 5000 microseconds
          * ```
          */
-        void set(uint64_t us) {
-            this->valueMicros = us;
-        }
+        void set(uint64_t us);
 
         /**
          * @brief Calculate the absolute difference between two Duration objects
@@ -76,9 +70,7 @@ class Duration {
          * Duration diff = d1.diff(d2); // diff = 3000 microseconds
          * ```
          */
-        Duration diff(const Duration& other) const {
-            return Duration(valueMicros > other.valueMicros ? valueMicros - other.valueMicros : other.valueMicros - valueMicros);
-        }
+        Duration diff(const Duration& other) const;
 
         /**
          * @brief Add another Duration to this one
@@ -92,9 +84,7 @@ class Duration {
          * Duration sum = d1.add(d2); // sum = 3000 microseconds
          * ```
          */
-        Duration add(const Duration& other) const {
-            return Duration(valueMicros + other.valueMicros);
-        }
+        Duration add(const Duration& other) const;
 
         /**
          * @brief Subtract another Duration from this one
@@ -108,9 +98,7 @@ class Duration {
          * Duration diff = d1.subtract(d2); // diff = 3000 microseconds
          * ```
          */
-        Duration subtract(const Duration& other) const {
-            return Duration(valueMicros > other.valueMicros ? valueMicros - other.valueMicros : 0);
-        }
+        Duration subtract(const Duration& other) const;
 
         /**
          * @brief Check if this Duration represents a later time than another
@@ -124,9 +112,7 @@ class Duration {
          * bool isAfter = d1.after(d2); // true
          * ```
          */
-        bool after(const Duration& other) const {
-            return valueMicros > other.valueMicros;
-        }
+        bool after(const Duration& other) const;
 
         /**
          * @brief Check if this Duration represents an earlier time than another
@@ -140,21 +126,13 @@ class Duration {
          * bool isBefore = d1.before(d2); // true
          * ```
          */
-        bool before(const Duration& other) const {
-            return valueMicros < other.valueMicros;
-        }
+        bool before(const Duration& other) const;
 
-        uint64_t us() {
-            return valueMicros;
-        }
+        uint64_t us();
 
-        uint64_t ms() {
-            return valueMicros / 1000ULL;
-        }
+        uint64_t ms();
 
-        uint64_t sec() {
-            return ms() / 1000ULL;
-        }
+        uint64_t sec();
 
         /**
 
@@ -172,9 +150,7 @@ class Duration {
          * Serial.println(now.get());
          * ```
          */
-        static Duration now() {
-            return Duration(esp_timer_get_time());
-        };
+        static Duration now();
 
         /**
          * @brief Get maximum possible Duration
@@ -185,9 +161,7 @@ class Duration {
          * Duration maxDur = Duration::maximum();
          * ```
          */
-        static Duration maximum() {
-            return Duration((uint64_t)-1);
-        };
+        static Duration maximum();
 
         /**
          * @brief Get a zero-length Duration
@@ -198,14 +172,9 @@ class Duration {
          * Duration zeroDur = Duration::zero();
          * ```
          */
-        static Duration zero() {
-            return Duration(0);
-        };
+        static Duration zero();
 
-
-        static Duration * us(uint32_t us) {
-            return new Duration(us);
-        }
+        static Duration * us(uint32_t us);
 
         /**
          * @brief Create a Duration from milliseconds
@@ -217,9 +186,7 @@ class Duration {
          * Duration d = Duration::ms(2); // 2000 microseconds
          * ```
          */
-        static Duration * ms(uint32_t ms) {
-            return new Duration(ms * 1000ULL);
-        }
+        static Duration * ms(uint32_t ms);
 
         /**
          * @brief Convert the duration to a human-readable string
@@ -260,12 +227,7 @@ class Duration {
          * Duration d2 = d1;
          * ```
          */
-        Duration& operator=(const Duration& other) {
-            if (this != &other) {
-                valueMicros = other.valueMicros;
-            }
-            return *this;
-        }
+        Duration& operator=(const Duration& other);
 
         /**
          * @brief Comparison operators with Duration
@@ -282,13 +244,14 @@ class Duration {
          * bool geq = d2 >= d1; // true
          * ```
          */
-        bool operator==(const Duration& other) const { return valueMicros == other.valueMicros; }
-        bool operator!=(const Duration& other) const { return valueMicros != other.valueMicros; }
-        bool operator<(const Duration& other)  const { return valueMicros < other.valueMicros; }
-        bool operator>(const Duration& other)  const { return valueMicros > other.valueMicros; }
-        bool operator<=(const Duration& other) const { return valueMicros <= other.valueMicros; }
-        bool operator>=(const Duration& other) const { return valueMicros >= other.valueMicros; }
+        bool operator==(const Duration& other) const;
+        bool operator!=(const Duration& other) const;
+        bool operator<(const Duration& other) const;
+        bool operator>(const Duration& other) const;
+        bool operator<=(const Duration& other) const;
+        bool operator>=(const Duration& other) const;
         operator uint64_t() const { return valueMicros; }
+        
         /**
          * @brief Arithmetic operators with Duration and uint64_t
          *
@@ -306,14 +269,14 @@ class Duration {
          * Duration diff2 = d2 - 500; // 1500
          * ```
          */
-        Duration operator+(const Duration& other) const { return Duration(valueMicros + other.valueMicros); }
-        Duration operator-(const Duration& other) const { return Duration(valueMicros > other.valueMicros ? valueMicros - other.valueMicros : 0); }
-        Duration operator*(const Duration& other) const { return Duration(valueMicros * other.valueMicros); }
-        Duration operator/(const Duration& other) const { return other.valueMicros ? Duration(valueMicros / other.valueMicros) : Duration(0); }
+        Duration operator+(const Duration& other) const;
+        Duration operator-(const Duration& other) const;
+        Duration operator*(const Duration& other) const;
+        Duration operator/(const Duration& other) const;
 
-        Duration operator*(uint64_t factor) const { return Duration(valueMicros * factor); }
-        Duration operator/(uint64_t divisor) const { return divisor ? Duration(valueMicros / divisor) : Duration(0); }
-        Duration operator+(uint64_t other) const { return Duration(valueMicros + other); }
-        Duration operator-(uint64_t other) const { return Duration(valueMicros > other ? valueMicros - other : 0); }
+        Duration operator*(uint64_t factor) const;
+        Duration operator/(uint64_t divisor) const;
+        Duration operator+(uint64_t other) const;
+        Duration operator-(uint64_t other) const;
 };
 }

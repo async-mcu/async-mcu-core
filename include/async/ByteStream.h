@@ -27,32 +27,25 @@ namespace async {
          * @param buffer Pointer to the byte buffer.
          * @param size Size of the buffer.
          */
-        ByteStream(const unsigned char* buffer, unsigned int size)
-            : data(buffer), dataSize(size), currentPos(0) {}
+        ByteStream(const unsigned char* buffer, unsigned int size);
 
         /**
          * @brief Returns the number of bytes available for reading.
          * @return Number of available bytes.
          */
-        int available() override {
-            return dataSize > currentPos ? static_cast<int>(dataSize - currentPos) : 0;
-        }
+        int available() override;
 
         /**
          * @brief Reads the next byte from the stream.
          * @return The byte read, or -1 if none available.
          */
-        int read() override {
-            return available() ? data[currentPos++] : -1;
-        }
+        int read() override;
 
         /**
          * @brief Peeks at the next byte without removing it from the stream.
          * @return The byte peeked, or -1 if none available.
          */
-        int peek() override {
-            return available() ? data[currentPos] : -1;
-        }
+        int peek() override;
 
         /**
          * @brief Reads multiple bytes into a buffer.
@@ -60,41 +53,25 @@ namespace async {
          * @param length Number of bytes to read.
          * @return Number of bytes actually read.
          */
-        unsigned int read(char* buffer, unsigned int length) override {
-            unsigned int size = dataSize - currentPos;
-            unsigned int toRead = size < dataSize ? size : dataSize;
-            if (toRead > 0) {
-                memcpy(buffer, data + currentPos, toRead);
-                currentPos += toRead;
-            }
-            return toRead;
-        }
+        unsigned int read(char* buffer, unsigned int length) override;
 
         /**
          * @brief Seeks to a specific position in the stream.
          * @param pos Position to seek to.
          * @return true if successful, false otherwise.
          */
-        bool seek(unsigned int pos) override {
-            if (pos > dataSize) return false;
-            currentPos = pos;
-            return true;
-        }
+        bool seek(unsigned int pos) override;
 
         /**
          * @brief Gets the current position in the stream.
          * @return Current position.
          */
-        unsigned int position() const override {
-            return currentPos;
-        }
+        unsigned int position() const override;
 
         /**
          * @brief Gets the total size of the stream.
          * @return Size of the stream.
          */
-        unsigned int size() const override {
-            return dataSize;
-        }
+        unsigned int size() const override;
     };
 }

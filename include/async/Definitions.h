@@ -1,4 +1,5 @@
 #pragma once
+#include "esp_cpu.h"
 
 // Генерируем выражение с || для всех элементов
 #define BOOL_OR_1(a) (a[0])
@@ -74,7 +75,8 @@ namespace async {
     DEMAND = 20,
     TICK = 30,
     ONCE = 40,
-    INTERR = 50
+    INTERR = 50,
+    INIT = 60
    };
 
   enum Core {
@@ -82,7 +84,7 @@ namespace async {
     CORE1 = 1
   };
 
-  char const* modeToStr(Mode mode) {
+  inline char const* modeToStr(Mode mode) {
     switch(mode) {
       case None: return "None";
       case Deep: return "Deep";
@@ -92,7 +94,7 @@ namespace async {
     }
   }
 
-  char const* typeToStr(Type type) {
+  inline char const* typeToStr(Type type) {
     switch(type) {
       case REPEAT: return "REPEAT";
       case DELAY: return "DELAY";
@@ -103,4 +105,7 @@ namespace async {
       default: return "Unknown";
     }
   }
+
+  bool isStarted();
+  void setStarted(bool value);
 }

@@ -3,13 +3,8 @@
 #include <functional>
 #include <async/Definitions.h>
 #include <async/Duration.h>
-#include <async/Executor.h>
-#include <async/Logging.h>
 
 namespace async {
-
-class Task;
-Task * onOnce(Core core, Task * task) ;
 
 class Task {
     private: 
@@ -26,102 +21,43 @@ class Task {
         void * value = nullptr;
 
     public: 
-        Task(Type type, Mode mode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback)
-            : type(type), mode(mode), core(core), delay(delay), interval(interval), callback(callback) {
-                ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
-            }
+        Task(Type type, Mode mode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback);
             
-        Task(Type type, Mode mode,Core core, Duration * delay, std::function<void(Task *)> callback)
-            : type(type), mode(mode), core(core), delay(delay), callback(callback) {
-                ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
-            }
+        Task(Type type, Mode mode, Core core, Duration * delay, std::function<void(Task *)> callback);
 
-        Task(Type type, Mode mode, Core core, std::function<void(Task *)> callback)
-            : type(type), mode(mode), core(core), callback(callback) {
-                ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
-            }
+        Task(Type type, Mode mode, Core core, std::function<void(Task *)> callback);
 
-        ~Task() {
-            ESP_LOGV(TAG_TASK, "Remove task mode %s, type %s!", modeToStr(mode), typeToStr(type));
-            if(delay != nullptr) {
-                delete delay;
-                delay = nullptr;
-            }   
-            if(interval != nullptr) {
-                delete interval;
-                interval = nullptr;
-            }
-            if(timer != nullptr) {
-                esp_timer_delete(*timer);
-                delete timer;
-                timer = nullptr;
-            }
-        }
+        ~Task();
 
-        Type getType() {
-            return type;
-        }
+        Type getType();
 
-        Duration & getInterval() {
-            return * interval;
-        }
+        Duration & getInterval();
 
-        Duration & getDelay() {
-            return * delay;
-        }
+        Duration & getDelay();
 
-        Mode getMode() {
-            return mode;
-        }
+        Mode getMode();
 
-        esp_timer_handle_t & getTimer() {
-            return * timer;
-        }
+        esp_timer_handle_t & getTimer();
 
-        void setTimer(esp_timer_handle_t * timer) {
-            this->timer = timer;
-        }
+        void setTimer(esp_timer_handle_t * timer);
 
-        uint64_t getNext() {
-            return next;
-        }
+        uint64_t getNext();
 
-        void setNext(uint64_t value) {
-            this->next = value;
-        }
+        void setNext(uint64_t value);
 
-        void execute() {
-            callback(this);
-        }
+        void execute();
 
-        void schedule() {
-            onOnce(core, this);
-        }
+        void schedule();
 
-        void setCertainly(bool value) {
-            this->certainly = value;
-        }
+        void setCertainly(bool value);
 
-        bool isCertainly() {
-            return certainly;
-        }
+        bool isCertainly();
 
-        void * getValue() {
-            return value;
-        }
+        void * getValue();
 
-        void setValue(void * value) {
-            this->value = value;
-        }
+        void setValue(void * value);
 
-        void cancel() {
-            if(timer != NULL) {
-                esp_timer_delete(*timer);
-                delete timer;
-            }
-
-            next = UINT64_MAX;
-        }
+        void cancel();
 };
 
 }

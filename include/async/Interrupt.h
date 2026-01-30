@@ -10,8 +10,7 @@
 #define INTERRUPT_SCHEDULE false
 
 namespace async {
-    // Предполагаем, что эти классы уже определены
-    class Pin;
+    class Pin; 
 
     class Interrupt {
         public: 
@@ -27,14 +26,11 @@ namespace async {
         ~Interrupt();
     };
 
-    Mode interruptLevel = Mode::None;
-    std::vector<Interrupt *> globalInterruptParams;
-    RTC_DATA_ATTR bool deepInterruptsRevert = false;
-    RTC_DATA_ATTR int deepInterruptsMode = 0;
-
-    uint64_t pinsMask = 0;
-
-    void setInterruptLevel(Mode level) {
-        interruptLevel = level;
-    }
+    void setInterruptLevel(Mode level);
+    Mode getInterruptLevel();
+    void setDeepInterruptsRevert(bool revert);
+    bool getDeepInterruptsRevert();
+    void setDeepInterruptsMode(int mode);
+    int getDeepInterruptsMode();
+    std::vector<Interrupt *> getGlobalInterruptParams();
 }
