@@ -8,7 +8,7 @@ namespace async {
 
 class Task {
     private: 
-        Mode mode;
+        SleepMode sleepMode;
         Type type;
         Core core;
         uint64_t next = UINT64_MAX;
@@ -20,11 +20,11 @@ class Task {
         void * value = nullptr;
 
     public: 
-        Task(Type type, Mode mode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback);
+        Task(Type type, SleepMode sleepMode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback);
             
-        Task(Type type, Mode mode, Core core, Duration * delay, std::function<void(Task *)> callback);
+        Task(Type type, SleepMode sleepMode, Core core, Duration * delay, std::function<void(Task *)> callback);
 
-        Task(Type type, Mode mode, Core core, std::function<void(Task *)> callback);
+        Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task *)> callback);
 
         ~Task();
 
@@ -34,7 +34,7 @@ class Task {
 
         Duration & getDelay();
 
-        Mode getMode();
+        SleepMode getSleepMode();
 
         esp_timer_handle_t & getTimer();
 

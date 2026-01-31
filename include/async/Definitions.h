@@ -62,7 +62,7 @@
 
 // Определения для асинхронного выполнения задач
 namespace async {
-  enum Mode { 
+  enum SleepMode { 
     None,
     Deep, 
     Light, 
@@ -84,7 +84,7 @@ namespace async {
     CORE1 = 1
   };
 
-  inline char const* modeToStr(Mode mode) {
+  inline char const* modeToStr(SleepMode mode) {
     switch(mode) {
       case None: return "None";
       case Deep: return "Deep";

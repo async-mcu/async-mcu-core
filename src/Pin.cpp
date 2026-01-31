@@ -99,9 +99,9 @@ bool Pin::isReverted() {
     return revert;
 }
 
-Interrupt * Pin::addInterrupt(Mode mode, gpio_int_type_t type, std::function<void(Interrupt *)> callback) {
+Interrupt * Pin::addInterrupt(SleepMode sleepMode, gpio_int_type_t type, std::function<void(Interrupt *)> callback) {
 
-        auto interruptParam = new Interrupt(this, type, mode, callback);
+        auto interruptParam = new Interrupt(this, type, sleepMode, callback);
 
         // add callback to list
         interruptParams.push_back(interruptParam);
@@ -115,13 +115,13 @@ Interrupt * Pin::addInterrupt(Mode mode, gpio_int_type_t type, std::function<voi
 
         // first init interrupt task for this pin
         if(interruptTask == nullptr) {
-            interruptTask = onDemand([mode, this](Task * demandTask) {
+            interruptTask = onDemand([sleepMode, this](Task * demandTask) {
                 if(!isStarted()) return; // wait start
 
                 int value = (int) demandTask->getValue();
                 ESP_LOGV(TAG_PIN, "onDemand pin %d", pinNum);
 
-                if(mode == Mode::Deep || mode == Mode::Light) {
+                if(sleepMode == SleepMode::Deep || sleepMode == SleepMode::Light) {
                     revert = !revert;
 
                     if(revert) {
@@ -208,16 +208,16 @@ Interrupt * Pin::addInterrupt(Mode mode, gpio_int_type_t type, std::function<voi
         ESP_ERROR_CHECK(gpio_isr_handler_add(pinNum, ISR, (void*) this));
 
         //
-        if(mode == Mode::Active) {
-            setInterruptLevel(Mode::Active);
+        if(sleepMode == SleepMode::Active) {
+            setInterruptSleepMode(SleepMode::Active);
         }
-        else if(mode == Mode::Light) {
-            setInterruptLevel(Mode::Light);
+        else if(sleepMode == SleepMode::Light) {
+            setInterruptSleepMode(SleepMode::Light);
             ESP_LOGD(TAG_PIN, "gpio_wakeup_enable pin %d to %d", pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
             gpio_wakeup_enable(pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
         }
-        else if(mode == Mode::Deep) {
-            setInterruptLevel(Mode::Deep);
+        else if(sleepMode == SleepMode::Deep) {
+            setInterruptSleepMode(SleepMode::Deep);
 
             ESP_LOGD(TAG_PIN, "gpio_wakeup_enable from deep pin %d to %d", pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
             gpio_wakeup_enable(pinNum, (currentMode == INPUT_PULLDOWN) ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
@@ -227,7 +227,7 @@ Interrupt * Pin::addInterrupt(Mode mode, gpio_int_type_t type, std::function<voi
             }
 
             for(Interrupt * interruptParam : getGlobalInterruptParams()) {
-                if(interruptParam->pin->getMode() != currentMode && interruptParam->sleepMode == Mode::Deep) {
+                if(interruptParam->pin->getMode() != currentMode && interruptParam->sleepMode == SleepMode::Deep) {
                     esp_system_abort("In deep sleep mode, modes for all pins must be the same (INPUT_PULLUP or INPUT_PULLDOWN)");
                 }
             }
@@ -266,27 +266,27 @@ void Pin::removeInterrupt(Interrupt * interrupt) {
 
     for(auto interruptParam : getGlobalInterruptParams()) {
         if(interruptParam->pin->getPin() == pinNum) {
-            if(interruptParam->sleepMode == Mode::Active) active = true;
-            else if(interruptParam->sleepMode == Mode::Light) light = true;
-            else if(interruptParam->sleepMode == Mode::Deep) deep = true;
+            if(interruptParam->sleepMode == SleepMode::Active) active = true;
+            else if(interruptParam->sleepMode == SleepMode::Light) light = true;
+            else if(interruptParam->sleepMode == SleepMode::Deep) deep = true;
         }
     }
 
     if(active) {
-        setInterruptLevel(Mode::Active);
+        setInterruptSleepMode(SleepMode::Active);
     }
     else if(light) {
-        setInterruptLevel(Mode::Light);
+        setInterruptSleepMode(SleepMode::Light);
     }
     else if(deep) {
-        setInterruptLevel(Mode::Deep);
+        setInterruptSleepMode(SleepMode::Deep);
     }
 
     if(interruptParams.size() == 0) {
         ESP_LOGD(TAG_PIN, "gpio_intr_disable pin %d!", pinNum);
         gpio_intr_disable(getPin());
         gpio_wakeup_disable(getPin());
-        setInterruptLevel(Mode::None);
+        setInterruptSleepMode(SleepMode::None);
     }
 }
 

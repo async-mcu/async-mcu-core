@@ -1,4 +1,30 @@
 // #pragma once
+
+// #include "async/Semaphore.h"
+
+// namespace async {
+//     enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP };
+
+//     struct Operation {
+//         OpType type;
+//         std::function<void(void)> callback;
+//         unsigned long delay;
+//         unsigned long timeout;
+//         Semaphore * semaphore;
+//         Pin * pin;
+//     };
+
+//     template<typename T>
+//     class Chain {
+//         private:
+//             std::vector<Operation*> operations;
+//             bool shouldLoop = false;
+//             bool cancelled = false;
+            
+ 
+//     }
+// }
+
 // #include <Arduino.h>
 // #include <async/Tick.h>
 // #include <async/Task.h>
@@ -16,7 +42,7 @@
 //     class Chain<void> : public Tick {
 //         private:
 //             enum class OpType { DELAY, THEN, SEMAPHORE_WAIT, SEMAPHORE_SKIP, INTERR, LOOP };
-            
+//            
 //             struct Operation {
 //                 OpType type;
 //                 VoidCallback callback;
@@ -25,7 +51,7 @@
 //                 Semaphore * semaphore;
 //                 Pin * pin;
 //             };
-        
+//        
 //             std::vector<Operation*> operations;
 //             uint8_t operationCount;
 //             uint8_t currentOpIndex;

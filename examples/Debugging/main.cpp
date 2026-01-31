@@ -10,20 +10,21 @@ void setup() {
     esp_log_level_set(TAG_PIN, ESP_LOG_VERBOSE);
     esp_log_level_set(TAG_EXECUTOR, ESP_LOG_VERBOSE);
 
-    onRepeat<Light>(Duration::ms(10000), [](Task * task) {
-        // ESP_LOGI(TAG_MAIN, "10 seconds passed, time %llu ms, mem %d, free stack space0: %d, free stack space1: %d, tasks0 %d, tasks1 %d \n", 
-        //     rts_ms(), 
-        //     heap_caps_get_free_size(MALLOC_CAP_INTERNAL), 
-        //     uxTaskGetStackHighWaterMark(taskLoopCore0),
-        //     uxTaskGetStackHighWaterMark(taskLoopCore1),
-        //     tasks[0].size(),
-        //     tasks[1].size());
+    onRepeat<Light>(Duration::ms(10000), Duration::zero(), [](Task * task) { 
+        ESP_LOGI(TAG_MAIN, "Time %llu ms, mem %d", rts_ms(), heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
-        // for(int core; core < SOC_CPU_CORES_NUM; core++) {
-        //     for(auto t : getCoreTasks((Core) core)) {
-        //         ESP_LOGI(TAG_MAIN, "  task%d mode %d type %d\n", core, t->getMode(), t->getType());
-        //     } 
-        // }
+        for(int core=0; core < SOC_CPU_CORES_NUM; core++) {
+            ESP_LOGI(TAG_MAIN, "Core: %d, free stack space: %d, tasks: %d", 
+                core, 
+                uxTaskGetStackHighWaterMark(getCoreTaskHandler((Core) core)),
+                getCoreTasks((Core) core).size());
+            
+            for(auto t : getCoreTasks((Core) core)) {
+                printf(" -  sleep mode: %s, type: %s\n", modeToStr(t->getSleepMode()), typeToStr(t->getType()));
+            } 
+        }
+
+
     });
 
     start();

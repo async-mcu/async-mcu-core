@@ -19,12 +19,12 @@ namespace async {
     int64_t rts_us();
     int64_t rts_ms();
     void checkDeepSleepTaskCanBeAdded();
-    std::vector<Task *> getThreadTasks(Core core);
-    TaskHandle_t getThreadHandler(Core core);
+    std::vector<Task *> getCoreTasks(Core core);
+    TaskHandle_t getCoreTaskHandler(Core core);
 
     void callTaskExecute(void *arg);
 
-    Task * onDelay(Mode mode, Duration * delay, Core core, std::function<void(Task *)> callback);
+    Task * onDelay(SleepMode sleepMode, Duration * delay, Core core, std::function<void(Task *)> callback);
 
     /**
      * @brief Schedule a task to execute after a specified delay.
@@ -38,9 +38,9 @@ namespace async {
      * @param callback The function to execute when the delay expires.
      * @return Task* Pointer to the created task.
      */
-    template<Mode mode>
+    template<SleepMode sleepMode>
     Task * onDelay(Duration * delay, Core core, std::function<void(Task *)> callback) {
-        return onDelay(mode, delay, core, callback);
+        return onDelay(sleepMode, delay, core, callback);
     }
 
     /**
@@ -54,12 +54,12 @@ namespace async {
      * @param callback The function to execute when the delay expires.
      * @return Task* Pointer to the created task.
      */
-    template<Mode mode>
+    template<SleepMode sleepMode>
     Task * onDelay(Duration * delay, std::function<void(Task *)> callback) {
-        return onDelay<mode>(delay, CURRENT_CORE, callback);
+        return onDelay<sleepMode>(delay, CURRENT_CORE, callback);
     }
 
-    Task * onRepeat(Mode mode, Duration * interval, Duration * startDelay, Core core, std::function<void(Task *)> callback);
+    Task * onRepeat(SleepMode sleepMode, Duration * interval, Duration * startDelay, Core core, std::function<void(Task *)> callback);
 
     /**
      * @brief Schedule a task to execute repeatedly with a specified interval and initial delay.
@@ -74,9 +74,14 @@ namespace async {
      * @param callback The function to execute at each interval.
      * @return Task* Pointer to the created task.
      */
-    template<Mode mode> 
+    template<SleepMode sleepMode> 
     Task * onRepeat(Duration * interval, Duration * startDelay, Core core, std::function<void(Task *)> callback) {
-        return onRepeat(mode, interval, startDelay, core, callback);
+        return onRepeat(sleepMode, interval, startDelay, core, callback);
+    }
+
+    template<SleepMode sleepMode> 
+    Task * onRepeat(Duration * interval, Duration * startDelay, std::function<void(Task *)> callback) {
+        return onRepeat(sleepMode, interval, startDelay, CURRENT_CORE, callback);
     }
 
     /**
@@ -91,7 +96,7 @@ namespace async {
      * @param callback The function to execute at each interval.
      * @return Task* Pointer to the created task.
      */
-    template<Mode mode> 
+    template<SleepMode mode> 
     Task * onRepeat(Duration * interval, Core core, std::function<void(Task *)> callback) {
         return onRepeat<mode>(interval, interval, core, callback);
     }
@@ -107,9 +112,9 @@ namespace async {
      * @param callback The function to execute at each interval.
      * @return Task* Pointer to the created task.
      */
-    template<Mode mode> 
+    template<SleepMode sleepMode> 
     Task * onRepeat(Duration * interval, std::function<void(Task *)> callback) {
-        return onRepeat<mode>(interval, interval, CURRENT_CORE, callback);
+        return onRepeat<sleepMode>(interval, interval, CURRENT_CORE, callback);
     }
 
     Task * onDemand(Core core, std::function<void(Task *)> callback);

@@ -6,14 +6,14 @@
 namespace async {
 
     // Global variable definitions from Interrupt.h
-    Mode interruptLevel = Mode::None;
+    SleepMode interruptSleepMode = SleepMode::None;
     RTC_DATA_ATTR bool deepInterruptsRevert = false;
     RTC_DATA_ATTR int deepInterruptsMode = 0;
     std::vector<Interrupt *> globalInterruptParams;
 
     // Interrupt class implementations (moved from Pin.cpp)
-    Interrupt::Interrupt(Pin *p, gpio_int_type_t intType, Mode sleep, std::function<void(Interrupt *)> cb)
-        : pin(p), type(intType), sleepMode(sleep), callback(cb) {
+    Interrupt::Interrupt(Pin *p, gpio_int_type_t intType, SleepMode sleepMode, std::function<void(Interrupt *)> cb)
+        : pin(p), type(intType), sleepMode(sleepMode), callback(cb) {
         ESP_LOGD(TAG_INTERRUPT, "Create interrupt pin %d, type: %d, pinMode: %d, sleepMode %s", pin->getPin(), type, pin->getMode(), modeToStr(sleepMode));
     }
 
@@ -28,8 +28,13 @@ namespace async {
         ESP_LOGD(TAG_INTERRUPT, "Cancel interrupt on pin %d", pin->getPin());
     }
 
-    void setInterruptLevel(Mode level) {
-        interruptLevel = level;
+
+    SleepMode getInterruptSleepMode() {
+        return interruptSleepMode;
+    }
+
+    void setInterruptSleepMode(SleepMode sleepMode) {
+        interruptSleepMode = sleepMode;
     }
 
     void setDeepInterruptsRevert(bool revert) {
@@ -46,10 +51,6 @@ namespace async {
 
     int getDeepInterruptsMode() {
         return deepInterruptsMode;
-    }
-
-    Mode getInterruptLevel() {
-        return interruptLevel;
     }
 
     const std::vector<Interrupt *> & getGlobalInterruptParams() {

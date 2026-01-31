@@ -38,7 +38,7 @@ namespace async {
         adc_channel_t getAdcChannelInternal();
 
         void interrupt();
-        Interrupt * addInterrupt(Mode mode, gpio_int_type_t type, std::function<void(Interrupt *)> callback);
+        Interrupt * addInterrupt(SleepMode sleepMode, gpio_int_type_t type, std::function<void(Interrupt *)> callback);
     public:
         Pin(int pin, int mode = INPUT_PULLUP, int defaultLevel = HIGH);
         gpio_num_t getPin();
@@ -55,9 +55,9 @@ namespace async {
         static void ISR(void* arg);
 
         // --- Прерывания 
-        template<Mode mode>
+        template<SleepMode sleepMode>
         Interrupt * addInterrupt(gpio_int_type_t type, std::function<void(Interrupt *)> callback) {
-            return addInterrupt(mode, type, callback);
+            return addInterrupt(sleepMode, type, callback);
         }
     };
 

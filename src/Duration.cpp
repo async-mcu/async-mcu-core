@@ -53,8 +53,8 @@ namespace async {
         return Duration((uint64_t)-1);
     }
 
-    Duration Duration::zero() {
-        return Duration(0);
+    Duration * Duration::zero() {
+        return new Duration(0);
     }
 
     Duration * Duration::us(uint32_t us) {

@@ -172,7 +172,7 @@ class Duration {
          * Duration zeroDur = Duration::zero();
          * ```
          */
-        static Duration zero();
+        static Duration * zero();
 
         static Duration * us(uint32_t us);
 

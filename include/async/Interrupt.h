@@ -15,18 +15,18 @@ namespace async {
     class Interrupt {
         public: 
         Pin * pin;
-        Mode sleepMode;
+        SleepMode sleepMode;
         gpio_int_type_t type;
         std::function<void(Interrupt *)> callback;
 
             // Конструктор
-        Interrupt(Pin * pin, gpio_int_type_t intType, Mode sleepMode, std::function<void(Interrupt *)> cb);
+        Interrupt(Pin * pin, gpio_int_type_t intType, SleepMode sleepMode, std::function<void(Interrupt *)> cb);
         void cancel();
         ~Interrupt();
     };
 
-    void setInterruptLevel(Mode level);
-    Mode getInterruptLevel();
+    void setInterruptSleepMode(SleepMode level);
+    SleepMode getInterruptSleepMode();
     void setDeepInterruptsRevert(bool revert);
     bool getDeepInterruptsRevert();
     void setDeepInterruptsMode(int mode);

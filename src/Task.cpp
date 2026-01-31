@@ -3,23 +3,23 @@
 
 using namespace async;
 
-Task::Task(Type type, Mode mode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback)
-    : type(type), mode(mode), core(core), delay(delay), interval(interval), callback(callback) {
-    ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
+Task::Task(Type type, SleepMode sleepMode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback)
+    : type(type), sleepMode(sleepMode), core(core), delay(delay), interval(interval), callback(callback) {
+    ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
 }
 
-Task::Task(Type type, Mode mode, Core core, Duration * delay, std::function<void(Task *)> callback)
-    : type(type), mode(mode), core(core), delay(delay), callback(callback) {
-    ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
+Task::Task(Type type, SleepMode sleepMode, Core core, Duration * delay, std::function<void(Task *)> callback)
+    : type(type), sleepMode(sleepMode), core(core), delay(delay), callback(callback) {
+    ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
 }
 
-Task::Task(Type type, Mode mode, Core core, std::function<void(Task *)> callback)
-    : type(type), mode(mode), core(core), callback(callback) {
-    ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(mode), typeToStr(type));
+Task::Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task *)> callback)
+    : type(type), sleepMode(sleepMode), core(core), callback(callback) {
+    ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
 }
 
 Task::~Task() {
-    ESP_LOGV(TAG_TASK, "Remove task mode %s, type %s!", modeToStr(mode), typeToStr(type));
+    ESP_LOGV(TAG_TASK, "Remove task sleep mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
     if(delay != nullptr) {
         delete delay;
         delay = nullptr;
@@ -47,8 +47,8 @@ Duration & Task::getDelay() {
     return * delay;
 }
 
-Mode Task::getMode() {
-    return mode;
+SleepMode Task::getSleepMode() {
+    return sleepMode;
 }
 
 esp_timer_handle_t & Task::getTimer() {
