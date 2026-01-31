@@ -12,8 +12,8 @@ Interrupt * interrupt15_Light = nullptr;
 void setup() {
   esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
   //esp_log_level_set(TAG_INTERRUPT, ESP_LOG_VERBOSE);
-  esp_log_level_set(TAG_PIN, ESP_LOG_DEBUG);
-  esp_log_level_set(TAG_EXECUTOR, ESP_LOG_DEBUG);
+  //esp_log_level_set(TAG_PIN, ESP_LOG_DEBUG);
+  //esp_log_level_set(TAG_EXECUTOR, ESP_LOG_DEBUG);
 
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
 

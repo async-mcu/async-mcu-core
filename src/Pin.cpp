@@ -294,7 +294,7 @@ void Pin::removeInterrupt(Interrupt * interrupt) {
 void Pin::ISR(void* arg) {
     Pin *instance = (Pin*) arg;
     gpio_intr_disable(instance->getPin());
-    ets_printf("ISR pin %d!\n", instance->getPin());
+    ESP_DRAM_LOGV(TAG_PIN, "ISR pin %d!\n", instance->getPin());
     instance->interrupt();
 }
 
