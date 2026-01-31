@@ -11,7 +11,8 @@
 namespace async {
 
     // Global variables definitions
-    std::vector<Task *> tasks[2];
+    std::vector<Task *> coreTasks[SOC_CPU_CORES_NUM];
+    TaskHandle_t coreTaskHandlers[SOC_CPU_CORES_NUM];
 
     RTC_DATA_ATTR uint64_t deepTasksTime[DEEP_TASKS_STACK];
     uint64_t deepTasksTimeFast[DEEP_TASKS_STACK];
@@ -26,7 +27,6 @@ namespace async {
 
     int activeTasksCount = 0;
     uint64_t rtcBoot = 0;
-    TaskHandle_t taskLoopCore[2];
 
     // Global variable definitions needed from Interrupt.h
     int64_t rts_us() {
@@ -38,6 +38,10 @@ namespace async {
 
     int64_t rts_ms() {
         return rts_us() / 1000ULL;
+    }
+
+    std::vector<Task *> getThreadTasks(Core core) {
+        return coreTasks[core];
     }
 
     void checkDeepSleepTaskCanBeAdded() {
@@ -85,10 +89,10 @@ namespace async {
             }
 
             if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
-                deepTasksTime[tasks[core].size()] = task->getDelay();
+                deepTasksTime[coreTasks[core].size()] = task->getDelay();
             }
 
-            tasks[core].push_back(task);
+            coreTasks[core].push_back(task);
         }
 
         return task;
@@ -125,10 +129,10 @@ namespace async {
             }
 
             if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
-                deepTasksTime[tasks[core].size()] = task->getDelay();
+                deepTasksTime[coreTasks[core].size()] = task->getDelay();
             }
 
-            tasks[core].push_back(task);
+            coreTasks[core].push_back(task);
         }
 
         return task;
@@ -145,7 +149,7 @@ namespace async {
     Task * onOnce(Core core, std::function<void(Task *)> callback) {
         auto task = new Task(Type::ONCE, Mode::Active, core, callback);
         task->setCertainly(true);
-        tasks[core].push_back(task);
+        coreTasks[core].push_back(task);
         return task;
     }
 
@@ -155,21 +159,21 @@ namespace async {
 
     Task * onOnce(Core core, Task * task) {
         task->setCertainly(true);
-        tasks[core].push_back(task);
+        coreTasks[core].push_back(task);
         return task;
     }
 
     Task * onInit(Core core, std::function<void(Task *)> callback) {
         auto task = new Task(Type::INIT, Mode::Active, core, callback);
         task->setCertainly(true);
-        tasks[core].push_back(task);
+        coreTasks[core].push_back(task);
         return task;
     }
 
     Task * onTick(Core core, std::function<void(Task *)> callback) {
         auto task = new Task(Type::TICK, Mode::Active, core, callback);
         task->setNext(0);
-        tasks[core].push_back(task);
+        coreTasks[core].push_back(task);
         return task;
     }
 
@@ -194,55 +198,55 @@ namespace async {
             minSleepTimeLight[core] = UINT64_MAX;
             minSleepTimeDeep[core] = UINT64_MAX;
 
-            for (int i = 0; i < tasks[core].size(); i++) {
-                if (tasks[core][i]->isCertainly()) {
-                    toExecute.push_back(tasks[core][i]);
-                    tasks[core][i]->setCertainly(false);
+            for (int i = 0; i < coreTasks[core].size(); i++) {
+                if (coreTasks[core][i]->isCertainly()) {
+                    toExecute.push_back(coreTasks[core][i]);
+                    coreTasks[core][i]->setCertainly(false);
 
-                    if (tasks[core][i]->getType() == Type::ONCE) {
-                        delete tasks[core][i];
+                    if (coreTasks[core][i]->getType() == Type::ONCE) {
+                        delete coreTasks[core][i];
                     }
 
-                    tasks[core].erase(tasks[core].begin() + i);
+                    coreTasks[core].erase(coreTasks[core].begin() + i);
                     i--;
-                } else if (tasks[core][i]->getType() == Type::TICK) {
-                    if (tasks[core][i]->getNext() != UINT64_MAX) {
+                } else if (coreTasks[core][i]->getType() == Type::TICK) {
+                    if (coreTasks[core][i]->getNext() != UINT64_MAX) {
                         tickTasksExists[core] = true;
-                        toExecute.push_back(tasks[core][i]);
+                        toExecute.push_back(coreTasks[core][i]);
                     } else {
-                        delete tasks[core][i];
-                        tasks[core].erase(tasks[core].begin() + i);
+                        delete coreTasks[core][i];
+                        coreTasks[core].erase(coreTasks[core].begin() + i);
                         i--;
                     }
-                } else if (tasks[core][i]->getMode() == Mode::Light) {
-                    if (tasks[core][i]->getNext() != UINT64_MAX) {
+                } else if (coreTasks[core][i]->getMode() == Mode::Light) {
+                    if (coreTasks[core][i]->getNext() != UINT64_MAX) {
                         lightTasksExists[core] = true;
 
-                        if (startCycleTime >= tasks[core][i]->getNext()) {
-                            toExecute.push_back(tasks[core][i]);
+                        if (startCycleTime >= coreTasks[core][i]->getNext()) {
+                            toExecute.push_back(coreTasks[core][i]);
 
-                            if (tasks[core][i]->getType() == Type::REPEAT) {
-                                tasks[core][i]->setNext(tasks[core][i]->getNext() + tasks[core][i]->getInterval());
+                            if (coreTasks[core][i]->getType() == Type::REPEAT) {
+                                coreTasks[core][i]->setNext(coreTasks[core][i]->getNext() + coreTasks[core][i]->getInterval());
                             } else {
-                                tasks[core][i]->setNext(UINT64_MAX);
+                                coreTasks[core][i]->setNext(UINT64_MAX);
                             }
                         } else if (!tickTasksExists[core]) {
-                            minSleepTimeLight[core] = minSleepTimeLight[core] < tasks[core][i]->getNext()
+                            minSleepTimeLight[core] = minSleepTimeLight[core] < coreTasks[core][i]->getNext()
                                                       ? minSleepTimeLight[core]
-                                                      : tasks[core][i]->getNext();
+                                                      : coreTasks[core][i]->getNext();
                         }
                     } else {
-                        delete tasks[core][i];
-                        tasks[core].erase(tasks[core].begin() + i);
+                        delete coreTasks[core][i];
+                        coreTasks[core].erase(coreTasks[core].begin() + i);
                         i--;
                     }
-                } else if (tasks[core][i]->getMode() == Mode::Deep) {
+                } else if (coreTasks[core][i]->getMode() == Mode::Deep) {
                     if (deepTasksTimeFast[i] != UINT64_MAX) {
                         if (startCycleTimeWithRtc >= deepTasksTimeFast[i]) {
-                            toExecute.push_back(tasks[core][i]);
+                            toExecute.push_back(coreTasks[core][i]);
 
-                            if (tasks[core][i]->getType() == Type::REPEAT) {
-                                deepTasksTimeFast[i] += tasks[core][i]->getInterval();
+                            if (coreTasks[core][i]->getType() == Type::REPEAT) {
+                                deepTasksTimeFast[i] += coreTasks[core][i]->getInterval();
                             } else {
                                 deepTasksTimeFast[i] = UINT64_MAX;
                             }
@@ -393,11 +397,11 @@ namespace async {
 
     void init() {
         for (int core = 0; core < SOC_CPU_CORES_NUM; core++) {
-            for (int i = 0; i < tasks[core].size(); i++) {
-                if (tasks[core][i]->getType() == INIT) {
-                    tasks[core][i]->execute();
-                    delete tasks[core][i];
-                    tasks[core].erase(tasks[core].begin() + i);
+            for (int i = 0; i < coreTasks[core].size(); i++) {
+                if (coreTasks[core][i]->getType() == INIT) {
+                    coreTasks[core][i]->execute();
+                    delete coreTasks[core][i];
+                    coreTasks[core].erase(coreTasks[core].begin() + i);
                     i--;
                 }
             }
@@ -427,7 +431,7 @@ namespace async {
                                     10000,
                                     (void *) core,
                                     1,
-                                    &taskLoopCore[core],
+                                    &coreTaskHandlers[core],
                                     core);
         }
     }

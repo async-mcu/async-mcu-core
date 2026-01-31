@@ -14,7 +14,6 @@ class Task {
         uint64_t next = UINT64_MAX;
         bool certainly = false;
         std::function<void(Task *)> callback;
-        
         Duration * delay = nullptr;
         Duration * interval = nullptr;
         esp_timer_handle_t * timer = nullptr;

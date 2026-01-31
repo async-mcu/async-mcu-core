@@ -1,5 +1,4 @@
-#include <async/Pin.h>
-#include <async/Executor.h>
+#include <Async.h>
 
 using namespace async;
 
@@ -35,7 +34,7 @@ void setup() {
   });
 
   start();
-};
+}
 
 void loop() {
   vTaskDelete(NULL);

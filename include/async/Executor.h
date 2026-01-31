@@ -19,6 +19,8 @@ namespace async {
     int64_t rts_us();
     int64_t rts_ms();
     void checkDeepSleepTaskCanBeAdded();
+    std::vector<Task *> getThreadTasks(Core core);
+    TaskHandle_t getThreadHandler(Core core);
 
     void callTaskExecute(void *arg);
 

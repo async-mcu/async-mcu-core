@@ -1,4 +1,4 @@
-#include <async/Pin.h>
+#include <Async.h>
 
 using namespace async;
 
@@ -10,6 +10,8 @@ static const char* TAG_MAIN = "MAIN";
 Interrupt * pin19RisingInterrupt = nullptr;
 
 void setup() {
+  init();
+  
   esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
   esp_log_level_set(TAG_INTERRUPT, ESP_LOG_VERBOSE);
   esp_log_level_set(TAG_PIN, ESP_LOG_VERBOSE);

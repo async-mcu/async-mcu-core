@@ -1,27 +1,29 @@
-#include <Arduino.h>
-#include <async/State.h>
+#include <Async.h>
 
 using namespace async;
+static const char *TAG_MAIN = "MAIN";
 
 RTC_DATA_ATTR State<int> counter(0);
 
 void setup() {
-  Serial.begin(115200); 
+    init();
 
-  counter.onChange([](int prev, int current) {
-    Serial.printf("onChange count of boots: prev %d, current %d \n", prev, current);
-  });
+    counter.onChange([](int prev, int current){ 
+        ESP_LOGI(TAG_MAIN, "onChange count of boots: prev %d, current %d \n", prev, current); 
+    });
 
-  Serial.printf("Count of boots %d \n", counter.set([](int prev) {
-    return prev + 1;
-  }));
+    ESP_LOGI(TAG_MAIN, "Count of boots %d \n", counter.set([](int prev){ 
+        return prev + 1; 
+    }));
 
-  delay(100);
+    onDelay<Active>(Duration::ms(100), [](Task *) {
+        esp_sleep_enable_timer_wakeup(1000 * 1000);
+        esp_deep_sleep_start(); 
+    });
 
-  esp_sleep_enable_timer_wakeup(1000 * 1000);
-  esp_deep_sleep_start();
-};
+    start();
+}
 
 void loop() {
-
+    vTaskDelete(NULL);
 }
