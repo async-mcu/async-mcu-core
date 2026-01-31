@@ -95,13 +95,17 @@ void Pin::setMode(uint8_t mode) {
     }
 }
 
+bool Pin::isReverted() {
+    return revert;
+}
+
 Interrupt * Pin::addInterrupt(Mode mode, gpio_int_type_t type, std::function<void(Interrupt *)> callback) {
 
         auto interruptParam = new Interrupt(this, type, mode, callback);
 
         // add callback to list
         interruptParams.push_back(interruptParam);
-        getGlobalInterruptParams().push_back(interruptParam);
+        addGlobalInterruptParam(interruptParam);
 
         // first install isr service
         if (!isrServiceInstalled) {
@@ -250,18 +254,18 @@ Interrupt * Pin::addInterrupt(Mode mode, gpio_int_type_t type, std::function<voi
 }
 
 // Interrupt management
-void Pin::removeInterrupt(Interrupt * task) {
+void Pin::removeInterrupt(Interrupt * interrupt) {
     ESP_LOGD(TAG_PIN, "Remove interrupt pin %d", pinNum);
 
-    interruptParams.erase(std::remove(interruptParams.begin(), interruptParams.end(), task), interruptParams.end());
-    getGlobalInterruptParams().erase(std::remove(getGlobalInterruptParams().begin(), getGlobalInterruptParams().end(), task), getGlobalInterruptParams().end());
+    interruptParams.erase(std::remove(interruptParams.begin(), interruptParams.end(), interrupt), interruptParams.end());
+    removeGlobalInterruptParam(interrupt);
 
     bool active = false;
     bool light = false;
     bool deep = false;
 
     for(auto interruptParam : getGlobalInterruptParams()) {
-        if(interruptParam->pinNum == pinNum) {
+        if(interruptParam->pin->getPin() == pinNum) {
             if(interruptParam->sleepMode == Mode::Active) active = true;
             else if(interruptParam->sleepMode == Mode::Light) light = true;
             else if(interruptParam->sleepMode == Mode::Deep) deep = true;

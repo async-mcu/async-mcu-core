@@ -14,7 +14,6 @@ namespace async {
 
     class Interrupt {
         public: 
-        gpio_num_t pinNum;
         Pin * pin;
         Mode sleepMode;
         gpio_int_type_t type;
@@ -32,5 +31,7 @@ namespace async {
     bool getDeepInterruptsRevert();
     void setDeepInterruptsMode(int mode);
     int getDeepInterruptsMode();
-    std::vector<Interrupt *> getGlobalInterruptParams();
+    const std::vector<Interrupt *> & getGlobalInterruptParams();
+    void addGlobalInterruptParam(Interrupt * p);
+    void removeGlobalInterruptParam(Interrupt * p);
 }

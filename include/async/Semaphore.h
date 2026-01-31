@@ -25,46 +25,31 @@ namespace async {
              * @param initialCount Initial count value.
              * @param maximumCount Maximum count value.
              */
-            Semaphore(int initialCount, int maximumCount)
-                : count(initialCount), maxCount(maximumCount) {}
+            Semaphore(int initialCount, int maximumCount);
 
             /**
              * @brief Try to acquire the semaphore.
              * @return true if acquired successfully, false otherwise.
              */
-            bool tryAcquire() {
-                if (count > 0 && !lock) {
-                    --count;
-                    lock = true;
-                    return true;
-                }
-                return false;
-            }
+            bool tryAcquire();
 
             /**
              * @brief Check if the semaphore is currently locked.
              * @return true if locked, false otherwise.
              */
-            bool isLock() const {
-                return lock;
-            }
+            bool isLock() const;
 
             /**
              * @brief Release the semaphore.
              *
              * Unlocks the semaphore and increments the count if below maxCount.
              */
-            void release() {
-                lock = false;
-                if (count < maxCount) {
-                    ++count;
-                }
-            }
+            void release();
 
             /**
              * @brief Get the number of available resources.
              * @return Current available count.
              */
-            int available() const { return count; }
+            int available() const;
     };
 }

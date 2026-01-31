@@ -18,21 +18,21 @@ void setup() {
 
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
 
-  pin13_RTC.addInterrupt<Deep>(FALLING, [](Interrupt *) {
+  pin13_RTC.addInterrupt<Light>(FALLING, [](Interrupt *) {
     ESP_LOGI(TAG_MAIN, "pin13_RTC onInterrupt::FALLING, time %llu ms", rts_ms());
   });
 
-  pin13_RTC.addInterrupt<Deep>(RISING, [](Interrupt *) {
+  pin13_RTC.addInterrupt<Light>(RISING, [](Interrupt *) {
     ESP_LOGI(TAG_MAIN, "pin13_RTC onInterrupt::RISING, time %llu ms", rts_ms());
   });
 
-  pin15_RTC.addInterrupt<Deep>(FALLING, [](Interrupt *) {
-    ESP_LOGI(TAG_MAIN, "pin15_RTC onInterrupt::FALLING, time %llu ms", rts_ms());
-  });
+  // pin15_RTC.addInterrupt<Deep>(FALLING, [](Interrupt *) {
+  //   ESP_LOGI(TAG_MAIN, "pin15_RTC onInterrupt::FALLING, time %llu ms", rts_ms());
+  // });
 
-  pin15_RTC.addInterrupt<Deep>(RISING, [](Interrupt *) {
-    ESP_LOGI(TAG_MAIN, "pin15_RTC onInterrupt::RISING, time %llu ms", rts_ms());
-  });
+  // pin15_RTC.addInterrupt<Deep>(RISING, [](Interrupt *) {
+  //   ESP_LOGI(TAG_MAIN, "pin15_RTC onInterrupt::RISING, time %llu ms", rts_ms());
+  // });
 
   start();
 };

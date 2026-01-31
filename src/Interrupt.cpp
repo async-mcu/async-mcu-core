@@ -1,6 +1,7 @@
 #include <async/Pin.h>
 #include <async/Interrupt.h>
 #include <async/Logging.h>
+#include <algorithm>
 
 namespace async {
 
@@ -51,7 +52,21 @@ namespace async {
         return interruptLevel;
     }
 
-    std::vector<Interrupt *> getGlobalInterruptParams() {
+    const std::vector<Interrupt *> & getGlobalInterruptParams() {
         return globalInterruptParams;
+    }
+
+    void addGlobalInterruptParam(Interrupt * p) {
+        if (!p) return;
+        if (std::find(globalInterruptParams.begin(), globalInterruptParams.end(), p) == globalInterruptParams.end()) {
+            globalInterruptParams.push_back(p);
+        }
+    }
+
+    void removeGlobalInterruptParam(Interrupt * p) {
+        auto it = std::find(globalInterruptParams.begin(), globalInterruptParams.end(), p);
+        if (it != globalInterruptParams.end()) {
+            globalInterruptParams.erase(it);
+        }
     }
 }
