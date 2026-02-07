@@ -1,31 +1,26 @@
-#include <Arduino.h>
-#include <async/Executor.h>
+#include <Async.h>
 
 using namespace async;
+static const char* TAG_MAIN = "MAIN";
 
 void setup() {
-  Serial.begin(115200); 
-
-  Serial.printf("Before script time %llu ms\n", micros() / 1000ULL);
+  ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
 
   onDelay<Light>(Duration::ms(2000), CORE0, [](Task *) {
-    Serial.printf("onDelay 1 Light 2000ms, time: %llu, core: %d \n", micros() / 1000ULL, xPortGetCoreID());
-    delay(10); // need for printf
+    ESP_LOGI(TAG_MAIN, "onDelay 1 Light 2000ms, time: %llu, core: %d", rts_ms(), CURRENT_CORE);
   });
 
   onDelay<Light>(Duration::ms(2000), CORE1, [](Task *) {
-    Serial.printf("onDelay 2 Light 2000ms, time: %llu, core: %d \n", micros() / 1000ULL, xPortGetCoreID());
-    delay(10); // need for printf
+    ESP_LOGI(TAG_MAIN, "onDelay 2 Light 2000ms, time: %llu, core: %d", rts_ms(), CURRENT_CORE);
   });
   
   onRepeat<Light>(Duration::ms(2000), CORE1, [](Task *) {
-    Serial.printf("onRepeat 2 Light 2000ms, time: %llu, core: %d \n", micros() / 1000ULL, xPortGetCoreID());
-    delay(10); // need for printf
+    ESP_LOGI(TAG_MAIN, "onRepeat 2 Light 2000ms, time: %llu, core: %d", rts_ms(), CURRENT_CORE);
   });
 
   start();
 };
 
 void loop() {
-
+  vTaskDelete(NULL);
 }
