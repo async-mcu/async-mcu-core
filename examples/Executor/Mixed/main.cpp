@@ -4,6 +4,8 @@ using namespace async;
 static const char* TAG_MAIN = "MAIN";
 
 void setup() {
+  initAsync();
+
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
 
   onDelay<Deep>(Duration::ms(2000), CORE0, [](Task *) {
@@ -32,7 +34,7 @@ void setup() {
     });
   });
 
-  start();
+  startAsync();
 };
 
 void loop() {

@@ -402,7 +402,7 @@ namespace async {
         }
     }
 
-    void init() {
+    void initAsync() {
         for (int core = 0; core < SOC_CPU_CORES_NUM; core++) {
             for (int i = 0; i < coreTasks[core].size(); i++) {
                 if (coreTasks[core][i]->getType() == INIT) {
@@ -415,7 +415,7 @@ namespace async {
         }
     }
 
-    void start() {
+    void startAsync() {
         if (isStarted()) {
             esp_system_abort("Already started");
         }

@@ -8,7 +8,7 @@ Pin pin15_RTC(15, INPUT_PULLDOWN);
 static const char* TAG_MAIN = "MAIN";
 
 void setup() {
-  initAsync();
+  init();
   
   esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
   esp_log_level_set(TAG_INTERRUPT, ESP_LOG_VERBOSE);
@@ -33,7 +33,7 @@ void setup() {
     ESP_LOGI(TAG_MAIN, "pin15_RTC onInterrupt::RISING, time %llu ms", rts_ms());
   });
 
-  startAsync();
+  start();
 }
 
 void loop() {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <async/Executor.h>
 #include <async/State.h>
 #include <async/Uuid.h>
 #include <Preferences.h>
@@ -7,6 +8,8 @@
 #define SETTINGS_NAMESPACE "S"
 #define RW_MODE false
 #define RO_MODE true
+
+int settingNumber = 0;
 
 namespace async {
     template <typename T>
@@ -17,239 +20,162 @@ namespace async {
     template<>
     class Setting<int> : public State<int> {
         private:
-        Uuid * uuid;
         Preferences prefs;
         int defaultValue;
-
-        bool start() {
-            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
-            this->currValue = prefs.getInt(this->uuid->asInt(), defaultValue);
-            prefs.end();
-            return true;
-        }
+        int settingPosition;
 
         public:
-        Setting (int defaultValue, Uuid * uuid) : State<int>(defaultValue) {
-            this->uuid = uuid;
-            this->defaultValue = defaultValue;
-        }
+        Setting (int defaultValue) : State<int>(defaultValue), defaultValue(defaultValue) {}
 
-        Uuid & getUuid() {
-            return * uuid;
-        }
+        void init() {
+            settingPosition = settingNumber++;
 
-        void getAndSet(GetAndSetAllArgsCallback cbCallback) {
-            this->set(cbCallback(get()));
-        }
-
-        void set(int value, bool  force = false) override {
-            if(this->get() != value || force) {
-                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
-                prefs.putInt(this->uuid, value);
+            onInit(CURRENT_CORE, [this](Task *) {
+                prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+                this->currValue = prefs.getInt((char *)settingPosition, defaultValue);
                 prefs.end();
-                State<int>::set(value, force);
-            }
+            });
+
+            onChange([this](int prev, int current) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
+                prefs.putInt((char *)settingPosition, prev);
+                prefs.end();
+            });
         }
 
         void reset() {
-            prefs.remove(this->uuid);
-            State<int>::set(defaultValue, true);
+            set(defaultValue);
         }
     };
 
     template<>
     class Setting<float> : public State<float> {
         private:
-        const char * uuid;
-        uint16_t uuid16;
         Preferences prefs;
         float defaultValue;
-
-        bool start() {
-            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
-            this->currValue = prefs.getFloat(this->uuid, defaultValue);
-            prefs.end();
-            return true;
-        }
+        int settingPosition;
 
         public:
-        Setting (const char * uuid, uint16_t uuid16, float defaultValue) : State<float>(defaultValue) {
-            this->uuid = uuid;
-            this->uuid16 = uuid16;
-            this->defaultValue = defaultValue;
-        }
+        Setting (float defaultValue) : State<float>(defaultValue), defaultValue(defaultValue) {}
 
-        const char * getUuid() {
-            return this->uuid;
-        }
+        void init() {
+            settingPosition = settingNumber++;
 
-        uint16_t getUuid16() {
-            return this->uuid16;
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback) {
-            this->set(cbCallback(get()));
-        }
-
-        void set(float value, bool  force = false) {
-            if(this->get() != value || force) {
-                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
-                prefs.putFloat(this->uuid, value);
+            onInit(CURRENT_CORE, [this](Task *) {
+                prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+                this->currValue = prefs.getFloat((char *)settingPosition, defaultValue);
                 prefs.end();
-                State<float>::set(value, force);
-            }
+            });
+
+            onChange([this](float prev, float current) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
+                prefs.putFloat((char *)settingPosition, prev);
+                prefs.end();
+            });
         }
 
         void reset() {
-            prefs.remove(this->uuid);
-            State<float>::set(defaultValue, true);
+            set(defaultValue);
         }
     };
 
     template<>
     class Setting<double> : public State<double> {
         private:
-        const char * uuid;
-        uint16_t uuid16;
         Preferences prefs;
         double defaultValue;
-
-        bool start() {
-            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
-            this->currValue = prefs.getDouble(this->uuid, defaultValue);
-            prefs.end();
-            return true;
-        }
+        int settingPosition;
 
         public:
-        Setting (const char * uuid, uint16_t uuid16, double defaultValue) : State<double>(defaultValue) {
-            this->uuid = uuid;
-            this->uuid16 = uuid16;
-            this->defaultValue = defaultValue;
-        }
+        Setting (double defaultValue) : State<double>(defaultValue), defaultValue(defaultValue) {}
 
-        const char * getUuid() {
-            return this->uuid;
-        }
+        void init() {
+            settingPosition = settingNumber++;
 
-        uint16_t getUuid16() {
-            return this->uuid16;
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
-            this->set(cbCallback(get()));
-        }
-
-        void set(double value, bool  force = false)  {
-            if(this->currValue != value || force) {
-                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
-                prefs.putDouble(this->uuid, value);
+            onInit(CURRENT_CORE, [this](Task *) {
+                prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+                this->currValue = prefs.getDouble((char *)settingPosition, defaultValue);
                 prefs.end();
-                State<double>::set(value, force);
-            }
+            });
+
+            onChange([this](double prev, double current) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
+                prefs.putDouble((char *)settingPosition, prev);
+                prefs.end();
+            });
         }
 
         void reset() {
-            prefs.remove(this->uuid);
-            State<double>::set(defaultValue, true);
+            set(defaultValue);
         }
     };
 
     template<>
     class Setting<bool> : public State<bool> {
         private:
-        const char * uuid;
-        uint16_t uuid16;
         Preferences prefs;
         bool defaultValue;
-
-        bool start() {
-            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
-            this->currValue = prefs.getBool(this->uuid, defaultValue);
-            prefs.end();
-            return true;
-        }
+        int settingPosition;
 
         public:
-        Setting (const char * uuid, uint16_t uuid16, bool defaultValue) : State<bool>(defaultValue) {
-            this->uuid = uuid;
-            this->uuid16 = uuid16;
-            this->defaultValue = defaultValue;
-        }
+        Setting (bool defaultValue) : State<bool>(defaultValue), defaultValue(defaultValue) {}
 
-        const char * getUuid() {
-            return this->uuid;
-        }
+        void init() {
+            settingPosition = settingNumber++;
 
-        uint16_t getUuid16() {
-            return this->uuid16;
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
-            this->set(cbCallback(get()));
-        }
-
-        void set(bool value, bool  force = false)  {
-            if(this->get() != value || force) {
-                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
-                prefs.putBool(this->uuid, value);
+            onInit(CURRENT_CORE, [this](Task *) {
+                prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+                this->currValue = prefs.getDouble((char *)settingPosition, defaultValue);
                 prefs.end();
-                State<bool>::set(value, force);
-            }
+            });
+
+            onChange([this](bool prev, bool current) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
+                prefs.putBool((char *)settingPosition, prev);
+                prefs.end();
+            });
         }
 
         void reset() {
-            prefs.remove(this->uuid);
-            State<bool>::set(defaultValue, true);
+            set(defaultValue);
         }
     };
 
     template<>
     class Setting<String> : public State<String> {
         private:
-        const char * uuid;
-        uint16_t uuid16;
         Preferences prefs;
         String defaultValue;
-
-        bool start() {
-            prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
-            this->currValue = prefs.getString(this->uuid, defaultValue);
-            prefs.end();
-            return true;
-        }
+        int settingPosition;
 
         public:
-        Setting (const char * uuid, uint16_t uuid16, String defaultValue) : State<String>(defaultValue) {
-            this->uuid = uuid;
-            this->uuid16 = uuid16;
-            this->defaultValue = defaultValue;
-        }
+        Setting (String defaultValue) : State<String>(defaultValue), defaultValue(defaultValue) {}
 
-        const char * getUuid() {
-            return this->uuid;
-        }
+        void init() {
+            settingPosition = settingNumber++;
 
-        uint16_t getUuid16() {
-            return this->uuid16;
-        }
-
-        void getAndSet(GetAndSetAllArgsCallback cbCallback)  {
-            this->set(cbCallback(get()));
-        }
-
-        void set(String value, bool  force = false)  {
-            if(get() != value || force) {
-                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
-                prefs.putString(this->uuid, value);
+            onInit(CURRENT_CORE, [this](Task *) {
+                prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
+                this->currValue = prefs.getString((char *)settingPosition, defaultValue);
                 prefs.end();
-                State<String>::set(value, force);
-            }
+            });
+
+            onChange([this](String prev, String current) {
+                prefs.begin(SETTINGS_NAMESPACE, RW_MODE);
+                prefs.putString((char *)settingPosition, prev);
+                prefs.end();
+            });
+        }
+        String operator+(const Setting<String>& other) const {
+            return this->currValue + other.currValue;
         }
 
+        String operator+(const String& other) const {
+            return this->currValue + other;
+        }
+        
         void reset() {
-            prefs.remove(this->uuid);
-            State<String>::set(defaultValue, true);
+            set(defaultValue);
         }
     };
 }

@@ -149,38 +149,11 @@ namespace async {
      */
     Task * onTick(Core core, std::function<void(Task *)> callback);
 
-    /**
-     * @brief Create a tick task that executes every cycle on the current core.
-     * 
-     * Creates a task that will execute on every iteration of the executor's main loop
-     * on the current CPU core. Tick tasks have the highest priority and run continuously.
-     * 
-     * @param callback The function to execute on each tick.
-     * @return Task* Pointer to the created task.
-     */
     Task * onTick(std::function<void(Task *)> callback);
 
     void mainLoop(void * parameter);
-    void init();
+    void initAsync();
 
-    /**
-     * @brief Start the async executor main loop.
-     * 
-     * This function starts the main execution loop that processes all scheduled tasks.
-     * It runs indefinitely, checking for tasks to execute, managing sleep modes,
-     * and handling task scheduling. This function should be called once after
-     * setting up all tasks.
-     * 
-     * The executor will:
-     * - Process tick tasks on every iteration
-     * - Execute delayed and repeating tasks when their time comes
-     * - Enter light sleep when only light tasks are pending
-     * - Enter deep sleep when only deep tasks are pending
-     * - Handle active tasks using ESP timers
-     * 
-     * @note This function never returns - it runs the main execution loop indefinitely.
-     * @throws esp_system_abort if the executor has already been started.
-     */
-    void start();
+    void startAsync();
 
 }

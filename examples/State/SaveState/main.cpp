@@ -6,7 +6,7 @@ static const char *TAG_MAIN = "MAIN";
 RTC_DATA_ATTR State<int> counter(0);
 
 void setup() {
-  init();
+  initAsync();
 
   counter.onChange([](int prev, int current){ 
     ESP_LOGI(TAG_MAIN, "onChange count of boots: prev %d, current %d \n", prev, current); 
@@ -21,7 +21,7 @@ void setup() {
     esp_deep_sleep_start(); 
   });
 
-  start();
+  startAsync();
 }
 
 void loop() {

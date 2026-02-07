@@ -10,6 +10,8 @@ static const char* TAG_MAIN = "MAIN";
 Interrupt * interrupt15_Light = nullptr;
 
 void setup() {
+  initAsync();
+
   esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
   //esp_log_level_set(TAG_INTERRUPT, ESP_LOG_VERBOSE);
   //esp_log_level_set(TAG_PIN, ESP_LOG_DEBUG);
@@ -34,7 +36,7 @@ void setup() {
     }
   });
 
-  start();
+  startAsync();
 };
 
 void loop() {

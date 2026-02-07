@@ -2,6 +2,9 @@
 
 #include <vector>
 #include <esp_attr.h>
+#include <esp_system.h>
+#include <functional>
+#include <async/Task.h>
 
 extern "C" {
     extern uint32_t _rtc_noinit_start;
@@ -69,6 +72,13 @@ class State {
             return this->currValue;
         }
 
+        bool isNotNull() {
+            return currValue != nullptr;
+        }
+
+        void setNull() {
+            set(nullptr);
+        }
 };
 
 }

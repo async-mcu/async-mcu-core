@@ -4,6 +4,8 @@ using namespace async;
 static const char* TAG_MAIN = "MAIN";
 
 void setup() {
+  initAsync();
+
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
 
   auto demand = onDemand(CORE1, [](Task *) {
@@ -15,7 +17,7 @@ void setup() {
     demand->execute();
   });
 
-  start();
+  startAsync();
 };
 
 void loop() {

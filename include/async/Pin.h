@@ -59,6 +59,11 @@ namespace async {
         Interrupt * addInterrupt(gpio_int_type_t type, std::function<void(Interrupt *)> callback) {
             return addInterrupt(sleepMode, type, callback);
         }
+
+        template<SleepMode sleepMode>
+        Interrupt * addInterrupt(int type, std::function<void(Interrupt *)> callback) {
+            return addInterrupt(sleepMode, (gpio_int_type_t)type, callback);
+        }
     };
 
 }

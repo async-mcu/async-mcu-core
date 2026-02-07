@@ -1,18 +1,15 @@
-#include <Arduino.h>
-#include <async/State.h>
-#include <async/Executor.h>
+#include <Async.h>
 
 using namespace async;
+static const char* TAG_MAIN = "MAIN";
 
 
 void setup() {
-  Serial.begin(115200); 
-
-  Serial.printf("Before script time %llu ms\n", rts_ms());
-
+  initAsync();
+  ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
   
   onRepeat<Deep>(Duration::ms(2000), CORE0, [](Task *) {
-    Serial.printf("onDelay 1 Deep 2000ms, time: %llu ms, core: %d \n", rts_ms(), xPortGetCoreID());
+    ESP_LOGI(TAG_MAIN, "onDelay 1 Deep 2000ms, time: %llu ms, core: %d", rts_ms(), xPortGetCoreID());
 
     int count = 0;
     uint64_t start_time = micros();
@@ -20,7 +17,7 @@ void setup() {
       count++;
 
       if(count > 1000) {
-        Serial.printf("for count > 1000, lambda time: %llu us, core: %d us\n", micros() - start_time, xPortGetCoreID());
+        ESP_LOGI(TAG_MAIN, "for count > 1000, lambda time: %llu us, core: %d us", micros() - start_time, xPortGetCoreID());
         break;
       }
     }
@@ -31,16 +28,16 @@ void setup() {
       count++;
 
       if(count > 1000) {
-        Serial.printf("onTick count > 1000, lambda time: %llu us, core: %d us\n", micros() - start_time, xPortGetCoreID());
+        ESP_LOGI(TAG_MAIN, "onTick count > 1000, lambda time: %llu us, core: %d us", micros() - start_time, xPortGetCoreID());
         that->cancel();
         delay(100);
       }
     });
   });
 
-  start();
+  startAsync();
 };
 
 void loop() {
-
+  vTaskDelete(NULL);
 }
