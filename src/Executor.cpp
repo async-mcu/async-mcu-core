@@ -14,8 +14,8 @@ namespace async {
     std::vector<Task *> coreTasks[SOC_CPU_CORES_NUM];
     TaskHandle_t coreTaskHandlers[SOC_CPU_CORES_NUM];
 
-    RTC_DATA_ATTR uint64_t deepTasksTime[DEEP_TASKS_STACK];
-    uint64_t deepTasksTimeFast[DEEP_TASKS_STACK];
+    RTC_DATA_ATTR uint64_t deepTasksTime[SOC_CPU_CORES_NUM][DEEP_TASKS_STACK];
+    uint64_t deepTasksTimeFast[SOC_CPU_CORES_NUM][DEEP_TASKS_STACK];
     bool timerIsRunning = false;
 
     bool tickTasksExists[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
@@ -94,7 +94,7 @@ namespace async {
             }
 
             if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
-                deepTasksTime[coreTasks[core].size()] = task->getDelay();
+                deepTasksTimeFast[core][coreTasks[core].size()] = task->getDelay();
             }
 
             coreTasks[core].push_back(task);
@@ -136,7 +136,7 @@ namespace async {
             }
 
             if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
-                deepTasksTime[coreTasks[core].size()] = task->getDelay();
+                deepTasksTimeFast[core][coreTasks[core].size()] = task->getDelay();
             }
 
             coreTasks[core].push_back(task);
@@ -192,7 +192,7 @@ namespace async {
         int core = (int) parameter;
         std::vector<Task *> toExecute;
 
-        ESP_LOGV(TAG_EXECUTOR, "mainLoop from core %d curr time: %llu", core, minSleepTimeLight[core]);
+        ESP_LOGV(TAG_EXECUTOR, "mainLoop from core %d curr time: %llu", core, rtcBoot);
 
         while (true) {
             uint64_t startCycleTime = esp_timer_get_time();
@@ -248,19 +248,28 @@ namespace async {
                         i--;
                     }
                 } else if (coreTasks[core][i]->getSleepMode() == SleepMode::Deep) {
-                    if (deepTasksTimeFast[i] != UINT64_MAX) {
-                        if (startCycleTimeWithRtc >= deepTasksTimeFast[i]) {
+                    ESP_LOGV(TAG_EXECUTOR, "deepTasksTime %llu", deepTasksTime[core][i]);   
+
+                    if (deepTasksTimeFast[core][i] != UINT64_MAX) {
+                        if (startCycleTimeWithRtc >= deepTasksTimeFast[core][i]) {
+                            
+                            ESP_LOGD(TAG_EXECUTOR, "%llu >= %llu, %d, %d", startCycleTimeWithRtc, deepTasksTimeFast[core][i], core, i);
+
                             toExecute.push_back(coreTasks[core][i]);
 
                             if (coreTasks[core][i]->getType() == Type::REPEAT) {
-                                deepTasksTimeFast[i] += coreTasks[core][i]->getInterval();
+                                ESP_LOGI(TAG_EXECUTOR, "update deepTasksTimeFast[%d][%d] from %llu", core, i, deepTasksTimeFast[core][i]);
+                                deepTasksTimeFast[core][i] += coreTasks[core][i]->getInterval();
+                                ESP_LOGI(TAG_EXECUTOR, "update deepTasksTimeFast[%d][%d] to %llu", core, i, deepTasksTimeFast[core][i]);
                             } else {
-                                deepTasksTimeFast[i] = UINT64_MAX;
+                                deepTasksTimeFast[core][i] = UINT64_MAX;
                             }
                         } else if (!tickTasksExists[core] && !lightTasksExists[core]) {
-                            minSleepTimeDeep[core] = minSleepTimeDeep[core] < deepTasksTimeFast[i]
+                            minSleepTimeDeep[core] = minSleepTimeDeep[core] < deepTasksTimeFast[core][i]
                                                      ? minSleepTimeDeep[core]
-                                                     : deepTasksTimeFast[i];
+                                                     : deepTasksTimeFast[core][i];
+
+                            ESP_LOGV(TAG_EXECUTOR, "minSleepTimeDeep[%d] updated to %llu", core, minSleepTimeDeep[core]);
                         }
                     }
                 }
@@ -342,8 +351,10 @@ namespace async {
                     }
                     // deep sleep
                     else {
-                        for (int i = 0; i < DEEP_TASKS_STACK; i++) {
-                            deepTasksTimeFast[i] = deepTasksTime[i];
+                        for (int core_upd = 0; core_upd < SOC_CPU_CORES_NUM; core_upd++) {
+                            for (int i = 0; i < DEEP_TASKS_STACK; i++) {
+                                deepTasksTime[core_upd][i] = deepTasksTimeFast[core_upd][i];
+                            }
                         }
 
                         if (MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) != UINT64_MAX) {
@@ -385,7 +396,8 @@ namespace async {
                         }
 
                         ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, deep sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
-                        ESP_LOGD(TAG_EXECUTOR, "esp_deep_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) - esp_timer_get_time());
+                        ESP_LOGD(TAG_EXECUTOR, "min sleep time %llu, %llu", minSleepTimeDeep[0], minSleepTimeDeep[1]);
+                        ESP_LOGI(TAG_EXECUTOR, "esp_deep_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
                         fflush(stdout);
                         vTaskDelay(pdMS_TO_TICKS(100));
 
@@ -423,8 +435,11 @@ namespace async {
 
         rtcBoot = rts_us();
 
-        for (int i = 0; i < DEEP_TASKS_STACK; i++) {
-            deepTasksTimeFast[i] = deepTasksTime[i];
+        for (int core = 0; core < SOC_CPU_CORES_NUM; core++) {
+            for (int i = 0; i < DEEP_TASKS_STACK; i++) {
+                deepTasksTimeFast[core][i] = deepTasksTime[core][i];
+                ESP_LOGI(TAG_EXECUTOR, "start deepTasksTimeFast[%d][%d] to %llu", core, i, deepTasksTime[core][i]);
+            }
         }
 
         esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();

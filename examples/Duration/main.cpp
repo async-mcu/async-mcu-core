@@ -1,5 +1,4 @@
-#include <async/Logging.h>
-#include <async/Duration.h>
+#include <Async.h>
 
 using namespace async;
 static const char* TAG_MAIN = "MAIN";

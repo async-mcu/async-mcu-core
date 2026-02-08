@@ -15,12 +15,12 @@ extern "C" {
 
 namespace async {
 
-bool isRtcDataVariable(const void* ptr) {
+inline bool isRtcDataVariable(const void* ptr) {
     return (uint32_t)ptr >= (uint32_t)&_rtc_data_start && 
            (uint32_t)ptr <= (uint32_t)&_rtc_data_end;
 }
 
-bool isRtcNoInitVariable(const void* ptr) {
+inline bool isRtcNoInitVariable(const void* ptr) {
     return (uint32_t)ptr >= (uint32_t)&_rtc_noinit_start && 
            (uint32_t)ptr <= (uint32_t)&_rtc_noinit_end;
 }

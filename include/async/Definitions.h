@@ -38,7 +38,7 @@
 
 //
 #define CURRENT_CORE (esp_cpu_get_core_id() == 0 ? CORE0 : CORE1)
-#define DEEP_TASKS_STACK 50
+#define DEEP_TASKS_STACK 2
 
 // Arduino-style константы
 #define LOW               0x0

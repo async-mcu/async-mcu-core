@@ -9,7 +9,7 @@
 #define RW_MODE false
 #define RO_MODE true
 
-int settingNumber = 0;
+static int settingNumber = 0;
 
 namespace async {
     template <typename T>
