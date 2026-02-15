@@ -20,6 +20,7 @@ namespace async {
     private:
         gpio_num_t pinNum;
         uint8_t currentMode;
+        SleepMode sleepMode = SleepMode::None;
         
         // Ресурсы LEDC (PWM / Tone)
         ledc_channel_t ledChan = LEDC_CHANNEL_MAX;
@@ -38,7 +39,7 @@ namespace async {
         adc_channel_t getAdcChannelInternal();
 
         void interrupt();
-        Interrupt * addInterrupt(SleepMode sleepMode, gpio_int_type_t type, std::function<void(Interrupt *)> callback);
+        Interrupt * addInterrupt(SleepMode sleepMode, gpio_int_type_t type, std::function<void(Interrupt &)> callback);
     public:
         Pin(int pin, int mode = INPUT_PULLUP, int defaultLevel = HIGH);
         gpio_num_t getPin();
@@ -56,12 +57,12 @@ namespace async {
 
         // --- Прерывания 
         template<SleepMode sleepMode>
-        Interrupt * addInterrupt(gpio_int_type_t type, std::function<void(Interrupt *)> callback) {
+        Interrupt * addInterrupt(gpio_int_type_t type, std::function<void(Interrupt &)> callback) {
             return addInterrupt(sleepMode, type, callback);
         }
 
         template<SleepMode sleepMode>
-        Interrupt * addInterrupt(int type, std::function<void(Interrupt *)> callback) {
+        Interrupt * addInterrupt(int type, std::function<void(Interrupt &)> callback) {
             return addInterrupt(sleepMode, (gpio_int_type_t)type, callback);
         }
     };

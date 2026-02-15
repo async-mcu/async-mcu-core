@@ -13,18 +13,18 @@ class Task {
         Core core;
         uint64_t next = UINT64_MAX;
         bool certainly = false;
-        std::function<void(Task *)> callback;
+        std::function<void(Task &)> callback;
         Duration * delay = nullptr;
         Duration * interval = nullptr;
         esp_timer_handle_t * timer = nullptr;
         void * value = nullptr;
 
     public: 
-        Task(Type type, SleepMode sleepMode, Core core, Duration * delay, Duration * interval, std::function<void(Task *)> callback);
+        Task(Type type, SleepMode sleepMode, Core core, Duration * delay, Duration * interval, std::function<void(Task &)> callback);
             
-        Task(Type type, SleepMode sleepMode, Core core, Duration * delay, std::function<void(Task *)> callback);
+        Task(Type type, SleepMode sleepMode, Core core, Duration * delay, std::function<void(Task &)> callback);
 
-        Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task *)> callback);
+        Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task &)> callback);
 
         ~Task();
 

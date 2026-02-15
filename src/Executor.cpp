@@ -63,7 +63,7 @@ namespace async {
         }
     }
 
-    Task * onDelay(SleepMode sleepMode, Duration *delay, Core core, std::function<void(Task *)> callback) {
+    Task * onDelay(SleepMode sleepMode, Duration *delay, Core core, std::function<void(Task &)> callback) {
         auto task = new Task(Type::DELAY, sleepMode, core, delay, callback);
 
         if (sleepMode == SleepMode::Active) {
@@ -104,7 +104,7 @@ namespace async {
     }
 
     Task * onRepeat(SleepMode sleepMode, Duration *interval, Duration *startDelay, Core core,
-                    std::function<void(Task *)> callback) {
+                    std::function<void(Task &)> callback) {
         auto task = new Task(Type::REPEAT, sleepMode, core, startDelay, interval, callback);
 
         if (sleepMode == SleepMode::Active) {
@@ -145,22 +145,22 @@ namespace async {
         return task;
     }
 
-    Task * onDemand(Core core, std::function<void(Task *)> callback) {
+    Task * onDemand(Core core, std::function<void(Task &)> callback) {
         return new Task(Type::DEMAND, SleepMode::None, core, callback);
     }
 
-    Task * onDemand(std::function<void(Task *)> callback) {
+    Task * onDemand(std::function<void(Task &)> callback) {
         return new Task(Type::DEMAND, SleepMode::None, CURRENT_CORE, callback);
     }
 
-    Task * onOnce(Core core, std::function<void(Task *)> callback) {
+    Task * onOnce(Core core, std::function<void(Task &)> callback) {
         auto task = new Task(Type::ONCE, SleepMode::Active, core, callback);
         task->setCertainly(true);
         coreTasks[core].push_back(task);
         return task;
     }
 
-    Task * onOnce(std::function<void(Task *)> callback) {
+    Task * onOnce(std::function<void(Task &)> callback) {
         return onOnce(CURRENT_CORE, callback);
     }
 
@@ -170,21 +170,21 @@ namespace async {
         return task;
     }
 
-    Task * onInit(Core core, std::function<void(Task *)> callback) {
+    Task * onInit(Core core, std::function<void(Task &)> callback) {
         auto task = new Task(Type::INIT, SleepMode::Active, core, callback);
         task->setCertainly(true);
         coreTasks[core].push_back(task);
         return task;
     }
 
-    Task * onTick(Core core, std::function<void(Task *)> callback) {
+    Task * onTick(Core core, std::function<void(Task &)> callback) {
         auto task = new Task(Type::TICK, SleepMode::Active, core, callback);
         task->setNext(0);
         coreTasks[core].push_back(task);
         return task;
     }
 
-    Task * onTick(std::function<void(Task *)> callback) {
+    Task * onTick(std::function<void(Task &)> callback) {
         return onTick(CURRENT_CORE, callback);
     }
 
@@ -302,11 +302,11 @@ namespace async {
                         uint64_t pinsMask = 0;
 
                         for (auto interruptParam : getGlobalInterruptParams()) {
-                            if (interruptParam->sleepMode == SleepMode::Deep && !(pinsMask & (1 << interruptParam->pin->getPin()))) {
-                                ESP_LOGV(TAG_EXECUTOR, "add deep sleep pin: %d", interruptParam->pin->getPin());
-                                pinsMask |= (1ULL << interruptParam->pin->getPin());
+                            if (interruptParam->sleepMode == SleepMode::Deep && !(pinsMask & (1 << interruptParam->pin.getPin()))) {
+                                ESP_LOGV(TAG_EXECUTOR, "add deep sleep pin: %d", interruptParam->pin.getPin());
+                                pinsMask |= (1ULL << interruptParam->pin.getPin());
 
-                                if (interruptParam->pin->isReverted()) {
+                                if (interruptParam->pin.isReverted()) {
                                     revertedPinsCount++;
                                 }
                             }
@@ -369,9 +369,9 @@ namespace async {
 
                         uint64_t pinsMask = 0;
                         for (auto interruptParam : getGlobalInterruptParams()) {
-                            if (interruptParam->sleepMode == SleepMode::Deep && !(pinsMask & (1 << interruptParam->pin->getPin()))) {
-                                ESP_LOGV(TAG_EXECUTOR, "add deep sleep pin: %d", interruptParam->pin->getPin());
-                                pinsMask |= (1ULL << interruptParam->pin->getPin());
+                            if (interruptParam->sleepMode == SleepMode::Deep && !(pinsMask & (1 << interruptParam->pin.getPin()))) {
+                                ESP_LOGV(TAG_EXECUTOR, "add deep sleep pin: %d", interruptParam->pin.getPin());
+                                pinsMask |= (1ULL << interruptParam->pin.getPin());
                             }
                         }
 

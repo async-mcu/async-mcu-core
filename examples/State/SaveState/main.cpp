@@ -16,7 +16,7 @@ void setup() {
     return prev + 1; 
   }));
 
-  onDelay<Active>(Duration::ms(100), [](Task *) {
+  onDelay<Active>(Duration::ms(100), [](Task &) {
     esp_sleep_enable_timer_wakeup(1000 * 1000);
     esp_deep_sleep_start(); 
   });

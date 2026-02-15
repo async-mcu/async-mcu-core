@@ -8,7 +8,7 @@ void setup() {
   initAsync();
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
   
-  onRepeat<Deep>(Duration::ms(2000), CORE0, [](Task *) {
+  onRepeat<Deep>(Duration::ms(2000), CORE0, [](Task &) {
     ESP_LOGI(TAG_MAIN, "onDelay 1 Deep 2000ms, time: %llu ms, core: %d", rts_ms(), xPortGetCoreID());
 
     int count = 0;
@@ -24,12 +24,12 @@ void setup() {
     
     start_time = micros();
 
-    onTick(CORE0, [count = 0, start_time](Task * that) mutable {
+    onTick(CORE0, [count = 0, start_time](Task & that) mutable {
       count++;
 
       if(count > 1000) {
         ESP_LOGI(TAG_MAIN, "onTick count > 1000, lambda time: %llu us, core: %d us", micros() - start_time, xPortGetCoreID());
-        that->cancel();
+        that.cancel();
         delay(100);
       }
     });

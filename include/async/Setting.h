@@ -30,7 +30,7 @@ namespace async {
         void init() {
             settingPosition = settingNumber++;
 
-            onInit(CURRENT_CORE, [this](Task *) {
+            onInit(CURRENT_CORE, [this](Task &) {
                 prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
                 this->currValue = prefs.getInt((char *)settingPosition, defaultValue);
                 prefs.end();
@@ -61,7 +61,7 @@ namespace async {
         void init() {
             settingPosition = settingNumber++;
 
-            onInit(CURRENT_CORE, [this](Task *) {
+            onInit(CURRENT_CORE, [this](Task &) {
                 prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
                 this->currValue = prefs.getFloat((char *)settingPosition, defaultValue);
                 prefs.end();
@@ -92,7 +92,7 @@ namespace async {
         void init() {
             settingPosition = settingNumber++;
 
-            onInit(CURRENT_CORE, [this](Task *) {
+            onInit(CURRENT_CORE, [this](Task &) {
                 prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
                 this->currValue = prefs.getDouble((char *)settingPosition, defaultValue);
                 prefs.end();
@@ -123,7 +123,7 @@ namespace async {
         void init() {
             settingPosition = settingNumber++;
 
-            onInit(CURRENT_CORE, [this](Task *) {
+            onInit(CURRENT_CORE, [this](Task &) {
                 prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
                 this->currValue = prefs.getDouble((char *)settingPosition, defaultValue);
                 prefs.end();
@@ -154,7 +154,7 @@ namespace async {
         void init() {
             settingPosition = settingNumber++;
 
-            onInit(CURRENT_CORE, [this](Task *) {
+            onInit(CURRENT_CORE, [this](Task &) {
                 prefs.begin(SETTINGS_NAMESPACE, RO_MODE);
                 this->currValue = prefs.getString((char *)settingPosition, defaultValue);
                 prefs.end();

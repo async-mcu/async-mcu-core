@@ -12,7 +12,7 @@ void setup() {
   esp_log_level_set(TAG_PIN, ESP_LOG_VERBOSE);
   esp_log_level_set(TAG_EXECUTOR, ESP_LOG_VERBOSE);
 
-  onRepeat<Light>(Duration::ms(10000), Duration::zero(), [](Task * task) { 
+  onRepeat<Light>(Duration::ms(10000), Duration::zero(), [](Task & task) { 
     ESP_LOGI(TAG_MAIN, "Time %llu ms, mem %d", rts_ms(), heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
     for(int core=0; core < SOC_CPU_CORES_NUM; core++) {

@@ -2,7 +2,7 @@
 
 namespace async {
     Boot::Boot(std::function<void(void)> callback) {
-        onInit(CURRENT_CORE, [callback](Task *) {
+        onInit(CURRENT_CORE, [callback](Task &) {
             callback();
         });
     }

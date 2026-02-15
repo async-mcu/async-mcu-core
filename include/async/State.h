@@ -46,7 +46,7 @@ class State {
 
         void set(T value) {
             for(std::function<void(T, T)> callback : callbacks) {
-                onOnce([prev = this->currValue, neww = value, callback] (Task *) {
+                onOnce([prev = this->currValue, neww = value, callback] (Task &) {
                     callback(prev, neww);
                 });
             }

@@ -14,13 +14,13 @@ namespace async {
 
     class Interrupt {
         public: 
-        Pin * pin;
+        Pin & pin;
         SleepMode sleepMode;
         gpio_int_type_t type;
-        std::function<void(Interrupt *)> callback;
+        std::function<void(Interrupt &)> callback;
 
             // Конструктор
-        Interrupt(Pin * pin, gpio_int_type_t intType, SleepMode sleepMode, std::function<void(Interrupt *)> cb);
+        Interrupt(Pin & pin, gpio_int_type_t intType, SleepMode sleepMode, std::function<void(Interrupt &)> cb);
         void cancel();
         ~Interrupt();
     };
