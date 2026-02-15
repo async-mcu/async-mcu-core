@@ -4,6 +4,9 @@ using namespace async;
 static const char* TAG_MAIN = "MAIN";
 
 void setup() {
+  esp_log_level_set(TAG_MAIN, ESP_LOG_VERBOSE);
+  //esp_log_level_set(TAG_EXECUTOR, ESP_LOG_VERBOSE);
+
   initAsync();
 
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());

@@ -4,6 +4,8 @@
 #include "driver/gptimer.h"
 #include "esp_event.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include <async/Task.h>
 #include <async/Executor.h>
@@ -23,10 +25,12 @@ namespace async {
     bool coreSleepReady[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
     uint64_t minSleepTimeDeep[SOC_CPU_CORES_NUM] = INIT_ARRAY(UINT64_MAX, SOC_CPU_CORES_NUM);
     uint64_t minSleepTimeLight[SOC_CPU_CORES_NUM] = INIT_ARRAY(UINT64_MAX, SOC_CPU_CORES_NUM);
-    volatile bool goToSleep = false;
 
     int activeTasksCount = 0;
     uint64_t rtcBoot = 0;
+
+    // semaphore counting how many cores are ready to sleep
+    static SemaphoreHandle_t sleepReadyMutex = NULL;
 
     // Global variable definitions needed from Interrupt.h
     int64_t rts_us() {
@@ -275,10 +279,6 @@ namespace async {
                 }
             }
 
-            const bool tickTasksExistsFinal = BOOL_OR(tickTasksExists, SOC_CPU_CORES_NUM);
-            const bool lightTasksExistsFinal = BOOL_OR(lightTasksExists, SOC_CPU_CORES_NUM);
-            const bool coreSleepReadyFinal = BOOL_AND(coreSleepReady, SOC_CPU_CORES_NUM);
-
             if (toExecute.size() > 0) {
                 coreSleepReady[core] = false;
 
@@ -288,15 +288,15 @@ namespace async {
 
                 vTaskDelay(1);
                 continue;
-            } else if (tickTasksExistsFinal || activeTasksCount > 0 || getInterruptSleepMode() == SleepMode::Active) {
+            } else if (BOOL_OR(tickTasksExists, SOC_CPU_CORES_NUM) || activeTasksCount > 0 || getInterruptSleepMode() == SleepMode::Active) {
+                coreSleepReady[core] = false;
                 vTaskDelay(1);
                 continue;
             }
 
-            if(!goToSleep) {
-                if(coreSleepReadyFinal) {
-                    goToSleep = true;
+            coreSleepReady[core] = true;
 
+            if (BOOL_AND(coreSleepReady, SOC_CPU_CORES_NUM) && xSemaphoreTake(sleepReadyMutex, 0) == pdTRUE) {
                     bool blockDeepSleepByInterrupt = false;
 
                     //if (getDeepInterruptsRevert()) {
@@ -325,9 +325,10 @@ namespace async {
                     //}
 
                     // light sleep
-                    if (blockDeepSleepByInterrupt || lightTasksExistsFinal || getInterruptSleepMode() == SleepMode::Light) {
-                        if (MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) != UINT64_MAX) {
-                            esp_sleep_enable_timer_wakeup(MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) - esp_timer_get_time());
+                    if (blockDeepSleepByInterrupt || BOOL_OR(lightTasksExists, SOC_CPU_CORES_NUM) || getInterruptSleepMode() == SleepMode::Light) {
+                        uint64_t finalMinSleepTimeLight = MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM);
+                        if (finalMinSleepTimeLight != UINT64_MAX) {
+                            esp_sleep_enable_timer_wakeup(finalMinSleepTimeLight - esp_timer_get_time());
                             timerIsRunning = true;
                         } else if (timerIsRunning) {
                             esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
@@ -339,17 +340,18 @@ namespace async {
                         }
 
                         ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, light sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
-                        ESP_LOGD(TAG_EXECUTOR, "esp_light_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM) - esp_timer_get_time());
+                        ESP_LOGD(TAG_EXECUTOR, "esp_light_sleep_start from core %d sleep time: %llu", core, finalMinSleepTimeLight - esp_timer_get_time());
                         
-                        fflush(stdout);
-                        vTaskDelay(pdMS_TO_TICKS(100));
+                        //fflush(stdout);
+                        //vTaskDelay(pdMS_TO_TICKS(100));
                         esp_light_sleep_start();
 
                         esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
                         ESP_LOGV(TAG_EXECUTOR, "esp_sleep_get_wakeup_cause: %d", cause);
 
-                        coreSleepReady[core] = false;
-                        goToSleep = false;
+                        for (int core_num = 0; core_num < SOC_CPU_CORES_NUM; core_num++) {
+                            coreSleepReady[core_num] = false;
+                        }
                     }
                     // deep sleep
                     else {
@@ -400,19 +402,13 @@ namespace async {
                         ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, deep sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
                         ESP_LOGD(TAG_EXECUTOR, "min sleep time %llu, %llu", minSleepTimeDeep[0], minSleepTimeDeep[1]);
                         ESP_LOGI(TAG_EXECUTOR, "esp_deep_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
+                        
                         fflush(stdout);
                         vTaskDelay(pdMS_TO_TICKS(100));
-
                         esp_deep_sleep_start();
                     }
-
-                }
-                else {
-                    coreSleepReady[core] = true;
-                }
+              xSemaphoreGive(sleepReadyMutex);
             }
-
-            vTaskDelay(1);
         }
     }
 
@@ -436,6 +432,7 @@ namespace async {
         setStarted(true);
 
         rtcBoot = rts_us();
+        sleepReadyMutex = xSemaphoreCreateMutex();
 
         for (int core = 0; core < SOC_CPU_CORES_NUM; core++) {
             for (int i = 0; i < DEEP_TASKS_STACK; i++) {
