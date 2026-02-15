@@ -55,7 +55,7 @@ namespace async {
     }
 
     void callTaskExecute(void *arg) {
-        Task *task = (Task *)task;
+        Task *task = (Task *)arg;
         task->execute();
 
         if (task->getSleepMode() == SleepMode::Active && task->getType() == Type::DELAY) {
@@ -286,8 +286,10 @@ namespace async {
                     task->execute();
                 }
 
+                vTaskDelay(1);
                 continue;
             } else if (tickTasksExistsFinal || activeTasksCount > 0 || getInterruptSleepMode() == SleepMode::Active) {
+                vTaskDelay(1);
                 continue;
             }
 
