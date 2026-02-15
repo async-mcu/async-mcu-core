@@ -403,8 +403,6 @@ namespace async {
                         ESP_LOGD(TAG_EXECUTOR, "min sleep time %llu, %llu", minSleepTimeDeep[0], minSleepTimeDeep[1]);
                         ESP_LOGI(TAG_EXECUTOR, "esp_deep_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
                         
-                        fflush(stdout);
-                        vTaskDelay(pdMS_TO_TICKS(100));
                         esp_deep_sleep_start();
                     }
               xSemaphoreGive(sleepReadyMutex);

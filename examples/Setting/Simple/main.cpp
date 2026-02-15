@@ -10,6 +10,8 @@ Setting<bool> booleanValue(false);
 Setting<String> stringValue("Hello world");
 
 void setup() {
+  esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
+  
   initAsync();
 
   // int

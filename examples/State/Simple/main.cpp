@@ -6,6 +6,8 @@ static const char *TAG_MAIN = "MAIN";
 State<int> value(0);
 
 void setup() {
+  esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
+  
   initAsync();
 
   value.onChange([](int prev, int current) { 

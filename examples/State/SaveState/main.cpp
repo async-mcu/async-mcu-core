@@ -6,6 +6,8 @@ static const char *TAG_MAIN = "MAIN";
 RTC_DATA_ATTR State<int> counter(0);
 
 void setup() {
+  esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
+  
   initAsync();
 
   counter.onChange([](int prev, int current){ 
