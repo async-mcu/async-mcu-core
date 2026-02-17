@@ -5,6 +5,7 @@ static const char* TAG_PIN = "PIN";
 static const char* TAG_TASK = "TASK";
 static const char* TAG_INTERRUPT = "INTERRUPT";
 static const char* TAG_CHAIN = "CHAIN";
+static const char* TAG_HTTP_SERVER = "HTTP_SERVER";
 
 #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
 #define ESP_LOG_MAXIMUM_LEVEL ESP_LOG_VERBOSE

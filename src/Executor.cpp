@@ -15,10 +15,13 @@ namespace async {
     // Global variables definitions
     std::vector<Task *> coreTasks[SOC_CPU_CORES_NUM];
     TaskHandle_t coreTaskHandlers[SOC_CPU_CORES_NUM];
+    std::vector<std::function<void(SleepMode)>> beforeEnterSleepCallback[SOC_CPU_CORES_NUM];
+    std::vector<std::function<void(SleepMode)>> afterWakeUpCallback[SOC_CPU_CORES_NUM];
 
     RTC_DATA_ATTR uint64_t deepTasksTime[SOC_CPU_CORES_NUM][DEEP_TASKS_STACK];
     uint64_t deepTasksTimeFast[SOC_CPU_CORES_NUM][DEEP_TASKS_STACK];
     bool timerIsRunning = false;
+    SleepMode manualSleepMode = SleepMode::None;
 
     bool tickTasksExists[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
     bool lightTasksExists[SOC_CPU_CORES_NUM] = INIT_ARRAY(false, SOC_CPU_CORES_NUM);
@@ -56,6 +59,22 @@ namespace async {
         if (isStarted()) {
             esp_system_abort("Deep tasks can only be added before the start() method.");
         }
+    }
+
+    void setManualSleepMode(SleepMode sleepMode) {
+        manualSleepMode = sleepMode;
+    }
+
+    SleepMode getManualSleepMode() {
+        return manualSleepMode;
+    }
+
+    void beforeEnterSleep(std::function<void(SleepMode)> callback) {
+        beforeEnterSleepCallback[CURRENT_CORE].push_back(callback);
+    }
+
+    void afterWakeUp(std::function<void(SleepMode)> callback) {
+        afterWakeUpCallback[CURRENT_CORE].push_back(callback);
     }
 
     void callTaskExecute(void *arg) {
@@ -256,15 +275,13 @@ namespace async {
 
                     if (deepTasksTimeFast[core][i] != UINT64_MAX) {
                         if (startCycleTimeWithRtc >= deepTasksTimeFast[core][i]) {
-                            
                             ESP_LOGD(TAG_EXECUTOR, "%llu >= %llu, %d, %d", startCycleTimeWithRtc, deepTasksTimeFast[core][i], core, i);
 
                             toExecute.push_back(coreTasks[core][i]);
 
                             if (coreTasks[core][i]->getType() == Type::REPEAT) {
-                                ESP_LOGI(TAG_EXECUTOR, "update deepTasksTimeFast[%d][%d] from %llu", core, i, deepTasksTimeFast[core][i]);
                                 deepTasksTimeFast[core][i] += coreTasks[core][i]->getInterval();
-                                ESP_LOGI(TAG_EXECUTOR, "update deepTasksTimeFast[%d][%d] to %llu", core, i, deepTasksTimeFast[core][i]);
+                                ESP_LOGD(TAG_EXECUTOR, "update deepTasksTimeFast[%d][%d] to %llu", core, i, deepTasksTimeFast[core][i]);
                             } else {
                                 deepTasksTimeFast[core][i] = UINT64_MAX;
                             }
@@ -288,7 +305,7 @@ namespace async {
 
                 vTaskDelay(1);
                 continue;
-            } else if (BOOL_OR(tickTasksExists, SOC_CPU_CORES_NUM) || activeTasksCount > 0 || getInterruptSleepMode() == SleepMode::Active) {
+            } else if (BOOL_OR(tickTasksExists, SOC_CPU_CORES_NUM) || activeTasksCount > 0 || getInterruptSleepMode() == SleepMode::Active || manualSleepMode == SleepMode::Active) {
                 coreSleepReady[core] = false;
                 vTaskDelay(1);
                 continue;
@@ -316,7 +333,6 @@ namespace async {
                         
                         ESP_LOGV(TAG_EXECUTOR, "pinsMaskCount %d, revertedPinsCount %d", __builtin_popcountll(pinsMask), revertedPinsCount);
 
-
                         if (__builtin_popcountll(pinsMask) > 1 && revertedPinsCount > 0) {
                             blockDeepSleepByInterrupt = true;
                         } else if (revertedPinsCount == 0) {
@@ -325,12 +341,10 @@ namespace async {
                     //}
 
                     // light sleep
-                    if (blockDeepSleepByInterrupt || BOOL_OR(lightTasksExists, SOC_CPU_CORES_NUM) || getInterruptSleepMode() == SleepMode::Light) {
+                    if (blockDeepSleepByInterrupt || BOOL_OR(lightTasksExists, SOC_CPU_CORES_NUM) || getInterruptSleepMode() == SleepMode::Light || manualSleepMode == SleepMode::Light) {
                         uint64_t finalMinSleepTimeLight = MIN_IN_ARRAY(minSleepTimeLight, SOC_CPU_CORES_NUM);
-                        if (finalMinSleepTimeLight != UINT64_MAX) {
-                            esp_sleep_enable_timer_wakeup(finalMinSleepTimeLight - esp_timer_get_time());
-                            timerIsRunning = true;
-                        } else if (timerIsRunning) {
+                        
+                        if (timerIsRunning) {
                             esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
                             timerIsRunning = false;
                         }
@@ -340,17 +354,30 @@ namespace async {
                         }
 
                         ESP_LOGV(TAG_EXECUTOR, "core ready %d, %d, light sleep %d, %d", coreSleepReady[0], coreSleepReady[1], lightTasksExists[0], lightTasksExists[1]);
-                        ESP_LOGD(TAG_EXECUTOR, "esp_light_sleep_start from core %d sleep time: %llu", core, finalMinSleepTimeLight - esp_timer_get_time());
+                        ESP_LOGI(TAG_EXECUTOR, "esp_light_sleep_start from core %d sleep time: %llu", core, finalMinSleepTimeLight - esp_timer_get_time());
                         
-                        //fflush(stdout);
-                        //vTaskDelay(pdMS_TO_TICKS(100));
+                        uint64_t finalLightSleepInterval = finalMinSleepTimeLight - esp_timer_get_time();
+                        for (int core_num = 0; core_num < SOC_CPU_CORES_NUM; core_num++) {
+                            for(auto & callback : beforeEnterSleepCallback[core_num]) {
+                                callback(SleepMode::Light);
+                            }
+                        }
+
+                        if (finalMinSleepTimeLight != UINT64_MAX) {
+                            esp_sleep_enable_timer_wakeup(finalMinSleepTimeLight - esp_timer_get_time());
+                            timerIsRunning = true;
+                        }
+
                         esp_light_sleep_start();
 
                         esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-                        ESP_LOGV(TAG_EXECUTOR, "esp_sleep_get_wakeup_cause: %d", cause);
+                        ESP_LOGD(TAG_EXECUTOR, "esp_sleep_get_wakeup_cause: %d", cause);
 
                         for (int core_num = 0; core_num < SOC_CPU_CORES_NUM; core_num++) {
                             coreSleepReady[core_num] = false;
+                            for(auto & callback : afterWakeUpCallback[core_num]) {
+                                callback(SleepMode::Light);
+                            }
                         }
                     }
                     // deep sleep
@@ -359,14 +386,6 @@ namespace async {
                             for (int i = 0; i < DEEP_TASKS_STACK; i++) {
                                 deepTasksTime[core_upd][i] = deepTasksTimeFast[core_upd][i];
                             }
-                        }
-
-                        if (MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) != UINT64_MAX) {
-                            esp_sleep_enable_timer_wakeup(MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
-                            timerIsRunning = true;
-                        } else if (timerIsRunning) {
-                            esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
-                            timerIsRunning = false;
                         }
 
                         ESP_LOGV(TAG_EXECUTOR, "get deepInterruptsRevert = %d", getDeepInterruptsRevert());
@@ -403,9 +422,20 @@ namespace async {
                         ESP_LOGD(TAG_EXECUTOR, "min sleep time %llu, %llu", minSleepTimeDeep[0], minSleepTimeDeep[1]);
                         ESP_LOGI(TAG_EXECUTOR, "esp_deep_sleep_start from core %d sleep time: %llu", core, MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
                         
+
+                        for (int core_num = 0; core_num < SOC_CPU_CORES_NUM; core_num++) {
+                            for(auto & callback : beforeEnterSleepCallback[core_num]) {
+                                callback(SleepMode::Deep);
+                            }
+                        }
+
+                        if (MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) != UINT64_MAX) {
+                            esp_sleep_enable_timer_wakeup(MIN_IN_ARRAY(minSleepTimeDeep, SOC_CPU_CORES_NUM) - rts_us());
+                        }
+
                         esp_deep_sleep_start();
                     }
-              xSemaphoreGive(sleepReadyMutex);
+                xSemaphoreGive(sleepReadyMutex);
             }
         }
     }
@@ -436,6 +466,12 @@ namespace async {
             for (int i = 0; i < DEEP_TASKS_STACK; i++) {
                 deepTasksTimeFast[core][i] = deepTasksTime[core][i];
                 ESP_LOGI(TAG_EXECUTOR, "start deepTasksTimeFast[%d][%d] to %llu", core, i, deepTasksTime[core][i]);
+            }
+
+            if(esp_reset_reason() == ESP_RST_DEEPSLEEP) {
+                for(auto & callback : afterWakeUpCallback[core]) {
+                    callback(SleepMode::Deep);
+                }
             }
         }
 

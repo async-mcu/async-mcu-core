@@ -21,6 +21,11 @@ namespace async {
     void checkDeepSleepTaskCanBeAdded();
     std::vector<Task *> getCoreTasks(Core core);
     TaskHandle_t getCoreTaskHandler(Core core);
+    void setManualSleepMode(SleepMode level);
+    SleepMode getManualSleepMode();
+
+    void beforeEnterSleep(std::function<void(SleepMode)> callback);
+    void afterWakeUp(std::function<void(SleepMode)> callback);
 
     void callTaskExecute(void *arg);
 

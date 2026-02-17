@@ -4,8 +4,6 @@
 
 namespace async {
 
-static const char* TAG = "HttpServer";
-
 // --- Сессии ---
 class SimpleSession : public IHttpSession {
     std::map<std::string, std::string> _data;
@@ -147,7 +145,14 @@ HttpServer::HttpServer(int port) {
         httpd_config_t config = HTTPD_DEFAULT_CONFIG();
         config.server_port = port;
         config.uri_match_fn = httpd_uri_match_wildcard;
-        httpd_start(&_server, &config);
+        esp_err_t err = httpd_start(&_server, &config);
+        
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_HTTP_SERVER, "Failed to start HTTP server: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(TAG_HTTP_SERVER, "HTTP server started on port %d", port);
+        }
+        
     });
 }
 
