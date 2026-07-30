@@ -2,6 +2,7 @@
 #include <async/Pin.h>
 #include <async/Executor.h>
 #include <async/Definitions.h>
+#include "hal/gpio_ll.h"
 
 using namespace async;
 
@@ -9,6 +10,9 @@ using namespace async;
 adc_oneshot_unit_handle_t Pin::adc1Handle = nullptr;
 bool Pin::adcUnitInit = false;
 bool isrServiceInstalled = false;
+
+QueueHandle_t Pin::irqQueue = nullptr;
+TaskHandle_t Pin::irqTask = nullptr;
 const int validDeepSleepPins[] = {0,2,4,12,13,14,15,25,26,27,32,33,34,35,36,37,38,39};
 
 bool isValidRtcPin(int pin) {
@@ -19,13 +23,43 @@ bool isValidRtcPin(int pin) {
 }
 
 // Private helper implementations
-void Pin::interrupt() {
-    int value = digitalRead();
+void Pin::ensureIrqDispatch() {
+    if (irqQueue == nullptr) {
+        irqQueue = xQueueCreate(32, sizeof(Pin *));
+        xTaskCreatePinnedToCore(Pin::irqDispatchTask, "pinIrq", 4096, nullptr, 1, &irqTask, 0);
+    }
+}
+
+void Pin::irqDispatchTask(void *) {
+    Pin * pin = nullptr;
+    while (xQueueReceive(irqQueue, &pin, portMAX_DELAY) == pdTRUE) {
+        if (pin) {
+            pin->interruptTask->schedule();
+        }
+    }
+}
+
+void IRAM_ATTR Pin::interrupt() {
+    int value = digitalRead(false);
 
     if(!interrupted) {
         interrupted = true;
         interruptTask->setValue((void *) value);
-        interruptTask->schedule();
+
+        Pin * self = this;
+        if (xPortInIsrContext()) {
+            BaseType_t higherPriorityTaskWoken = pdFALSE;
+            if (xQueueSendFromISR(irqQueue, &self, &higherPriorityTaskWoken) != pdTRUE) {
+                interrupted = false; // очередь переполнена — повтор на следующем фронте
+            }
+            if (higherPriorityTaskWoken == pdTRUE) {
+                portYIELD_FROM_ISR();
+            }
+        } else {
+            if (xQueueSend(irqQueue, &self, 0) != pdTRUE) {
+                interrupted = false;
+            }
+        }
     }
 }
 
@@ -160,6 +194,14 @@ bool Pin::isReverted() {
 }
 
 Interrupt * Pin::addInterrupt(SleepMode sleepMode, gpio_int_type_t type, std::function<void(Interrupt &)> callback) {
+        // В Deep-режиме будить можно только по фронту RISING/FALLING:
+        // механизм ext0/ext1 + revert работает с уровнями, имитируя фронты.
+        if (sleepMode == SleepMode::Deep && type != RISING && type != FALLING) {
+            ESP_LOGE(TAG_PIN, "Deep interrupt on pin %d supports only RISING/FALLING (got type %d)", pinNum, (int) type);
+            esp_system_abort("Deep sleep interrupts support only RISING and FALLING edges");
+        }
+
+        ensureIrqDispatch();
 
         auto interruptParam = new Interrupt(*this, type, sleepMode, callback);
 
@@ -238,8 +280,9 @@ Interrupt * Pin::addInterrupt(SleepMode sleepMode, gpio_int_type_t type, std::fu
             }
 
             for(Interrupt * interruptParam : getGlobalInterruptParams()) {
-                if(interruptParam->pin.getMode() != currentMode && interruptParam->sleepMode == SleepMode::Deep) {
-                    esp_system_abort("In deep sleep mode, modes for all pins must be the same (INPUT_PULLUP or INPUT_PULLDOWN)");
+                if(interruptParam->sleepMode == SleepMode::Deep && interruptParam->pin.getMode() != currentMode) {
+                    ESP_LOGE(TAG_PIN, "Deep wake pins must share one pull mode: pin %d mode %d != %d", interruptParam->pin.getPin(), interruptParam->pin.getMode(), currentMode);
+                    esp_system_abort("Deep sleep: all wake pins must use the same pull (INPUT_PULLUP or INPUT_PULLDOWN)");
                 }
             }
 
@@ -301,15 +344,16 @@ void Pin::removeInterrupt(Interrupt * interrupt) {
     }
 }
 
-// ISR handler
-void Pin::ISR(void* arg) {
+// ISR handler. IRAM: всё вызываемое отсюда обязано быть в IRAM/inline-HAL —
+// высокоуровневые gpio_intr_disable/gpio_get_level лежат во flash в этом IDF.
+void IRAM_ATTR Pin::ISR(void* arg) {
     Pin *instance = (Pin*) arg;
-    gpio_intr_disable(instance->getPin());
+    gpio_ll_intr_disable(&GPIO, instance->getPin()); // register-only, inline → IRAM-safe
     ESP_DRAM_LOGV(TAG_PIN, "ISR pin %d!\n", instance->getPin());
     instance->interrupt();
 }
 
-gpio_num_t Pin::getPin() {
+gpio_num_t IRAM_ATTR Pin::getPin() {
    return pinNum;
 }
 
@@ -323,9 +367,12 @@ void Pin::digitalWrite(int level, bool disableModeCheck) {
     this->level = level;
 }
 
-int Pin::digitalRead() {
-    if (currentMode == ANALOG) setMode(INPUT);
-    return gpio_get_level(pinNum);
+// setAutoMode=false — безопасный для ISR путь: пропускает setMode(INPUT)
+// (тяжёлая flash-логика). Уровень читаем через gpio_ll_get_level (inline-HAL →
+// инлайнится в IRAM); высокоуровневый gpio_get_level в этом IDF лежит во flash.
+int IRAM_ATTR Pin::digitalRead(bool setAutoMode) {
+    if (setAutoMode && currentMode == ANALOG) setMode(INPUT);
+    return gpio_ll_get_level(&GPIO, pinNum);
 }
 
 int Pin::analogRead() {

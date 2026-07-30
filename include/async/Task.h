@@ -18,6 +18,8 @@ class Task {
         Duration * interval = nullptr;
         esp_timer_handle_t * timer = nullptr;
         void * value = nullptr;
+        bool counted = false;     // учтена ли в activeTasksCount
+        bool cancelled = false;   // задача отменена (cancel)
 
     public: 
         Task(Type type, SleepMode sleepMode, Core core, Duration * delay, Duration * interval, std::function<void(Task &)> callback);
@@ -27,6 +29,9 @@ class Task {
         Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task &)> callback);
 
         ~Task();
+
+        Task(const Task &) = delete;
+        Task & operator=(const Task &) = delete;
 
         Type getType();
 
@@ -54,7 +59,11 @@ class Task {
 
         void * getValue();
 
-        void setValue(void * value);
+        void IRAM_ATTR setValue(void * value);
+
+        bool isCancelled();
+        bool isCounted();
+        void setCounted(bool value);
 
         void cancel();
 };

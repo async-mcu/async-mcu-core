@@ -10,41 +10,41 @@ class FileStream : public Stream {
         File file;
         size_t fileSize;
         size_t currentPos;
-    
+
     public:
-        FileStream(File &file) : fileSize(file.size()), currentPos(0), file(file) {}
-    
-    
+        FileStream(File &file) : file(file), fileSize(file.size()), currentPos(0) {}
+
+
         int available() override {
             return file.available();
         }
-    
+
         int read() override {
             int result = file.read();
             if (result != -1) currentPos++;
             return result;
         }
-    
+
         int peek() override {
             return file.peek();
         }
-    
-        size_t read(char* buffer, size_t length) override {
+
+        unsigned int read(char* buffer, unsigned int length) override {
             size_t bytesRead = file.readBytes(buffer, length);
             currentPos += bytesRead;
-            return bytesRead;
+            return (unsigned int) bytesRead;
         }
-    
-        bool seek(size_t pos) override {
+
+        bool seek(unsigned int pos) override {
             return file.seek(pos);
         }
-    
-        size_t position() const override {
-            return file.position();
+
+        unsigned int position() const override {
+            return (unsigned int) file.position();
         }
-    
-        size_t size() const override {
-            return fileSize;
+
+        unsigned int size() const override {
+            return (unsigned int) fileSize;
         }
     };
 }

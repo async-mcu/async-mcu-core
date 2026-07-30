@@ -114,11 +114,21 @@ std::string HttpRequest::method() const {
 std::string HttpRequest::body() {
     if (!_cached_body.empty()) return _cached_body;
     if (_req->content_len == 0) return "";
-    std::vector<char> buf(_req->content_len + 1);
-    int ret = httpd_req_recv(_req, buf.data(), _req->content_len);
-    if (ret <= 0) return "";
-    buf[ret] = '\0';
-    _cached_body = std::string(buf.data());
+
+    std::string body;
+    body.reserve(_req->content_len);
+
+    size_t remaining = _req->content_len;
+    std::vector<char> chunk(256);
+    while (remaining > 0) {
+        size_t want = remaining < chunk.size() ? remaining : chunk.size();
+        int ret = httpd_req_recv(_req, chunk.data(), want);
+        if (ret <= 0) break; // error or timeout
+        body.append(chunk.data(), ret);
+        remaining -= ret;
+    }
+
+    _cached_body = std::move(body);
     return _cached_body;
 }
 
@@ -151,25 +161,42 @@ HttpServer::HttpServer(int port) {
             ESP_LOGE(TAG_HTTP_SERVER, "Failed to start HTTP server: %s", esp_err_to_name(err));
         } else {
             ESP_LOGI(TAG_HTTP_SERVER, "HTTP server started on port %d", port);
+            for (const auto& route : _pendingRoutes) {
+                httpd_register_uri_handler(_server, &route);
+            }
+            _pendingRoutes.clear();
         }
         
     });
 }
 
+void HttpServer::registerOrDefer(const httpd_uri_t& route) {
+    if (_server) {
+        httpd_register_uri_handler(_server, &route);
+    } else {
+        _pendingRoutes.push_back(route);
+    }
+}
+
 void HttpServer::get(const char* uri, HandlerFunc h) {
     httpd_uri_t r = {uri, HTTP_GET, _global_handler, new RouteData{h, this}};
-    httpd_register_uri_handler(_server, &r);
+    registerOrDefer(r);
 }
 
 void HttpServer::post(const char* uri, HandlerFunc h) {
     httpd_uri_t r = {uri, HTTP_POST, _global_handler, new RouteData{h, this}};
-    httpd_register_uri_handler(_server, &r);
+    registerOrDefer(r);
 }
 
 std::vector<int> HttpServer::wsClients() {
-    size_t count = 10; int fds[10];
-    if (httpd_get_client_list(_server, &count, fds) == ESP_OK)
-        return std::vector<int>(fds, fds + count);
+    if (!_server) return {};
+    const size_t CAP = 16;
+    int fds[CAP];
+    size_t count = CAP;
+    if (httpd_get_client_list(_server, &count, fds) == ESP_OK) {
+        size_t n = count < CAP ? count : CAP;
+        return std::vector<int>(fds, fds + n);
+    }
     return {};
 }
 
@@ -186,25 +213,36 @@ esp_err_t HttpServer::_global_ws_handler(httpd_req_t* req) {
         r.type = WsEventType::CONNECT; wd->handler(r, res);
         return ESP_OK;
     }
-    httpd_ws_frame_t frame = {}; uint8_t buf[128]; frame.payload = buf;
-    if (httpd_ws_recv_frame(req, &frame, 128) == ESP_OK) {
-        r.type = (frame.type == HTTPD_WS_TYPE_TEXT) ? WsEventType::TEXT : WsEventType::BINARY;
-        r.data.assign(frame.payload, frame.payload + frame.len);
-        wd->handler(r, res);
+    httpd_ws_frame_t frame = {};
+    // первый вызов определяет размер payload
+    if (httpd_ws_recv_frame(req, &frame, 0) == ESP_OK) {
+        std::vector<uint8_t> buf(frame.len ? frame.len : 1);
+        frame.payload = buf.data();
+        if (httpd_ws_recv_frame(req, &frame, buf.size()) == ESP_OK) {
+            r.type = (frame.type == HTTPD_WS_TYPE_TEXT) ? WsEventType::TEXT : WsEventType::BINARY;
+            r.data.assign(buf.data(), buf.data() + frame.len);
+            wd->handler(r, res);
+        }
     }
     return ESP_OK;
 }
 
 void HttpServer::ws(const char* uri, WsHandlerFunc h) {
     httpd_uri_t r = {uri, HTTP_GET, _global_ws_handler, new WsData{h}, true};
-    httpd_register_uri_handler(_server, &r);
+    registerOrDefer(r);
 }
 
 // --- Фильтр Auth ---
 BasicAuthFilter::BasicAuthFilter(const std::string& u, const std::string& p) {
-    std::string r = u + ":" + p; unsigned char b[128]; size_t o;
-    mbedtls_base64_encode(b, sizeof(b), &o, (unsigned char*)r.c_str(), r.length());
-    _auth_header = "Basic " + std::string((char*)b, o);
+    std::string r = u + ":" + p;
+    size_t outLen = 4 * ((r.length() + 2) / 3) + 1; // размер base64-буфера
+    std::vector<unsigned char> b(outLen);
+    size_t o = 0;
+    if (mbedtls_base64_encode(b.data(), b.size(), &o, (const unsigned char*)r.c_str(), r.length()) == 0) {
+        _auth_header = "Basic " + std::string((char*)b.data(), o);
+    } else {
+        _auth_header = "Basic ";
+    }
 }
 
 bool BasicAuthFilter::operator()(HttpRequest& req, HttpResponse& res) {

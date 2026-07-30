@@ -45,14 +45,43 @@ class State {
         }
 
         void set(T value) {
-            for(std::function<void(T, T)> callback : callbacks) {
-                onOnce([prev = this->currValue, neww = value, callback] (Task &) {
-                    callback(prev, neww);
-                });
-            }
-            
             this->prevValue = this->currValue;
             this->currValue = value;
+
+            if (callbacks.empty()) return;
+
+            // Все колбэки откладываются одной задачей. prev, value и список колбэков
+            // снапшотятся, чтобы отложенный вызов видел значения на момент set(),
+            // а не изменившееся состояние к моменту выполнения.
+            onOnce([prev = this->prevValue, value = std::move(value), callbacks = this->callbacks](Task &) {
+                for (const auto & callback : callbacks) {
+                    callback(prev, value);
+                }
+            });
+        }
+
+        /**
+         * @brief Обновить значение только если оно отличается от текущего.
+         *
+         * При `value == currValue` не меняет prevValue и НЕ планировирует колбэки
+         * onChange (а значит, в Setting не пишется NVS — нет лишнего износа flash).
+         * В отличие от set(), который срабатывает всегда (в т.ч. на то же значение).
+         * @return true, если значение изменилось.
+         */
+        bool setIfChanged(T value) {
+            if (value == this->currValue) return false;
+            this->set(value);
+            return true;
+        }
+
+        /**
+         * @brief То же, что setIfChanged(T), но новое значение вычисляется колбэком
+         * из текущего (как set(std::function<T(T)>)).
+         * @return Текущее значение после (возможного) обновления.
+         */
+        T setIfChanged(std::function<T(T)> cbCallback) {
+            this->setIfChanged(cbCallback(this->currValue));
+            return this->currValue;
         }
 
         /**

@@ -20,11 +20,14 @@ Task::Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task &)
 
 Task::~Task() {
     ESP_LOGV(TAG_TASK, "Remove task sleep mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
+    // delay и interval могут указывать на один объект: перегрузки onRepeat(interval,…)
+    // передают interval и как startDelay, и как interval (Executor.h). Удалить один раз.
+    bool delayIsInterval = (delay != nullptr && interval == delay);
     if(delay != nullptr) {
         delete delay;
         delay = nullptr;
-    }   
-    if(interval != nullptr) {
+    }
+    if(interval != nullptr && !delayIsInterval) {
         delete interval;
         interval = nullptr;
     }
@@ -87,15 +90,31 @@ void * Task::getValue() {
     return value;
 }
 
-void Task::setValue(void * value) {
+void IRAM_ATTR Task::setValue(void * value) {
     this->value = value;
 }
 
+bool Task::isCancelled() {
+    return cancelled;
+}
+
+bool Task::isCounted() {
+    return counted;
+}
+
+void Task::setCounted(bool value) {
+    this->counted = value;
+}
+
 void Task::cancel() {
+    notifyActiveTaskCancelled(*this);
+
     if(timer != NULL) {
         esp_timer_delete(*timer);
         delete timer;
+        timer = nullptr;
     }
 
+    cancelled = true;
     next = UINT64_MAX;
 }

@@ -14,6 +14,15 @@
 #include <async/Pin.h>
 #include <async/Interrupt.h>
 
+// ext1 wake mode for "wake on LOW". Classic ESP32 only has ALL_LOW (all pins low);
+// S2/S3/C3/C6/H2 provide ANY_LOW (any single pin low) and deprecate ALL_LOW. Select by
+// target so a pullup-style wake works on a single button where the chip allows it.
+#if CONFIG_IDF_TARGET_ESP32
+#define ASYNC_EXT1_WAKEUP_LOW ESP_EXT1_WAKEUP_ALL_LOW
+#else
+#define ASYNC_EXT1_WAKEUP_LOW ESP_EXT1_WAKEUP_ANY_LOW
+#endif
+
 namespace async {
 
     int64_t rts_us();
@@ -21,13 +30,16 @@ namespace async {
     void checkDeepSleepTaskCanBeAdded();
     std::vector<Task *> getCoreTasks(Core core);
     TaskHandle_t getCoreTaskHandler(Core core);
-    void setManualSleepMode(SleepMode level);
-    SleepMode getManualSleepMode();
+    void setSleepMode(SleepMode mode);
+    SleepMode getSleepMode();
 
     void beforeEnterSleep(std::function<void(SleepMode)> callback);
     void afterWakeUp(std::function<void(SleepMode)> callback);
 
     void callTaskExecute(void *arg);
+
+    // Декремент activeTasksCount для active-задачи (с защитой от двойного учёта).
+    void notifyActiveTaskCancelled(Task & task);
 
     Task * onDelay(SleepMode sleepMode, Duration * delay, Core core, std::function<void(Task &)> callback);
 

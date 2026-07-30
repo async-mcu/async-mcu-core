@@ -70,8 +70,6 @@ public:
         return obj;
     }
 
-    esp_err_t parseMultipart(std::function<void(std::string name, std::string filename, const uint8_t* data, size_t len, bool last)> cb);
-
     bool isValid() const { return _is_valid; }
     IHttpSession& getSession();
     httpd_req_t* raw() { return _req; }
@@ -79,7 +77,6 @@ public:
 
 class HttpResponse {
     httpd_req_t* _req;
-    bool _headers_sent = false;
 public:
     HttpResponse(httpd_req_t* req) : _req(req) {}
 
@@ -109,6 +106,9 @@ using WsHandlerFunc = std::function<void(WsRequest&, WsResponse&)>;
 class HttpServer {
     httpd_handle_t _server = nullptr;
     std::vector<FilterFunc> _filters;
+    std::vector<httpd_uri_t> _pendingRoutes;
+
+    void registerOrDefer(const httpd_uri_t& route);
 
     struct RouteData {
         HandlerFunc handler;

@@ -19,8 +19,8 @@ namespace async {
     }
 
     unsigned int ByteStream::read(char* buffer, unsigned int length) {
-        unsigned int size = dataSize - currentPos;
-        unsigned int toRead = size < dataSize ? size : dataSize;
+        unsigned int available = dataSize > currentPos ? dataSize - currentPos : 0;
+        unsigned int toRead = available < length ? available : length;
         if (toRead > 0) {
             memcpy(buffer, data + currentPos, toRead);
             currentPos += toRead;

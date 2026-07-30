@@ -1,5 +1,6 @@
 #pragma once
 #include "esp_cpu.h"
+#include <cstddef>
 
 // Генерируем выражение с || для всех элементов
 #define BOOL_OR_1(a) (a[0])
@@ -17,14 +18,15 @@
 #define BOOL_AND_N(n, a) BOOL_AND_##n(a)
 #define BOOL_AND(a, n) BOOL_AND_N(n, a)
 
-// Минимум в массиве
-#define MIN_IN_ARRAY_1(arr) (arr[0])
-#define MIN_IN_ARRAY_2(arr) ((arr)[0] < (arr)[1] ? (arr)[0] : (arr)[1])
-#define MIN_IN_ARRAY_3(arr) MIN_IN_ARRAY_2(arr) < (arr)[2] ? MIN_IN_ARRAY_2(arr) : (arr)[2]
-#define MIN_IN_ARRAY_4(arr) MIN_IN_ARRAY_2(arr) < MIN_IN_ARRAY_2(&(arr)[2]) ? \
-                            MIN_IN_ARRAY_2(arr) : MIN_IN_ARRAY_2(&(arr)[2])
-#define MIN_IN_ARRAY_N(n, arr) MIN_IN_ARRAY_##n(arr)
-#define MIN_IN_ARRAY(arr, n) MIN_IN_ARRAY_N(n, arr)
+// Минимум в массиве (inline-шаблон: без повторного вычисления аргументов)
+template <typename T>
+inline T minInArray(const T * arr, size_t n) {
+    T best = arr[0];
+    for (size_t i = 1; i < n; i++) {
+        if (arr[i] < best) best = arr[i];
+    }
+    return best;
+}
 
 // Инициализация массива одинаковыми значениями
 #define INIT_ARRAY_1(val) {val}

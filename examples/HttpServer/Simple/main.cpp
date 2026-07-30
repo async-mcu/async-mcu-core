@@ -11,7 +11,7 @@ HttpServer http(80);
 
 void setup() {
   setCpuFrequencyMhz(80);
-  setManualSleepMode(SleepMode::Active);
+  setSleepMode(SleepMode::Active);
 
   esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
   esp_log_level_set(TAG_HTTP_SERVER, ESP_LOG_VERBOSE);

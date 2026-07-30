@@ -4,31 +4,37 @@ namespace async {
 
 Semaphore::Semaphore(int initialCount, int maximumCount)
     : count(initialCount), maxCount(maximumCount) {
-    lock = false;
 }
 
 bool Semaphore::tryAcquire() {
-    if (count > 0 && !lock) {
-        --count;
-        lock = true;
-        return true;
+    int expected = count.load(std::memory_order_relaxed);
+    while (expected > 0) {
+        if (count.compare_exchange_weak(expected, expected - 1,
+                                        std::memory_order_acq_rel,
+                                        std::memory_order_relaxed)) {
+            return true;
+        }
     }
     return false;
 }
 
 bool Semaphore::isLock() const {
-    return lock;
+    return available() == 0;
 }
 
 void Semaphore::release() {
-    lock = false;
-    if (count < maxCount) {
-        ++count;
+    int current = count.load(std::memory_order_relaxed);
+    while (current < maxCount) {
+        if (count.compare_exchange_weak(current, current + 1,
+                                        std::memory_order_acq_rel,
+                                        std::memory_order_relaxed)) {
+            return;
+        }
     }
 }
 
 int Semaphore::available() const {
-    return count;
+    return count.load(std::memory_order_relaxed);
 }
 
 } // namespace async

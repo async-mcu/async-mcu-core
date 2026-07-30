@@ -4,6 +4,9 @@
  * @file Semaphore.h
  * @brief Defines the async::Semaphore class for managing resource access in asynchronous environments.
  */
+
+#include <atomic>
+
 namespace async {
 
     /**
@@ -15,9 +18,8 @@ namespace async {
      */
     class Semaphore {
         private:
-            int count;                ///< Current available count.
+            std::atomic<int> count;   ///< Current available count (atomic for cross-core access).
             const int maxCount;       ///< Maximum count allowed.
-            volatile bool lock = false; ///< Indicates if the semaphore is currently locked.
 
         public:
             /**
