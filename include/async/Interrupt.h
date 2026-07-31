@@ -4,7 +4,7 @@
 #include "soc/rtc.h"
 #include <vector>
 #include <functional>
-#include <async/Definitions.h>
+#include <async/Globals.h>
 
 #define INTERRUPT_DIRECT true
 #define INTERRUPT_SCHEDULE false
@@ -24,14 +24,4 @@ namespace async {
         void cancel();
         ~Interrupt();
     };
-
-    void setInterruptSleepMode(SleepMode level);
-    SleepMode getInterruptSleepMode();
-    void setDeepInterruptsRevert(bool revert);
-    bool getDeepInterruptsRevert();
-    void setDeepInterruptsMode(int mode);
-    int getDeepInterruptsMode();
-    const std::vector<Interrupt *> & getGlobalInterruptParams();
-    void addGlobalInterruptParam(Interrupt * p);
-    void removeGlobalInterruptParam(Interrupt * p);
 }

@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <async/Pin.h>
 #include <async/Executor.h>
-#include <async/Definitions.h>
+#include <async/Globals.h>
 #include "hal/gpio_ll.h"
 
 using namespace async;
@@ -168,6 +168,9 @@ void Pin::setMode(uint8_t mode) {
     switch (mode) {
         case INPUT:
             gpio_set_direction(pinNum, GPIO_MODE_INPUT);
+            break;
+        case OUTPUT:
+            gpio_set_direction(pinNum, GPIO_MODE_OUTPUT);
             break;
         case OUTPUT | OUTPUT_ANALOG:
             gpio_set_direction(pinNum, GPIO_MODE_INPUT_OUTPUT);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <async/Definitions.h>
+#include <async/Globals.h>
 #include <async/Logging.h>
 #include <async/State.h>
 #include <async/Setting.h>

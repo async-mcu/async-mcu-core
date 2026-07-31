@@ -1,7 +1,10 @@
 #pragma once
 
 #include <functional>
-#include <async/Definitions.h>
+#include <vector>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <async/Globals.h>
 #include <async/Duration.h>
 
 namespace async {
@@ -67,5 +70,59 @@ class Task {
 
         void cancel();
 };
+
+    // ===== API планирования задач (определения в Task.cpp) =====
+    // rts_us/rts_ms и setSleepMode/getSleepMode — inline в <async/Globals.h>.
+
+    std::vector<Task *> getCoreTasks(Core core);
+    TaskHandle_t getCoreTaskHandler(Core core);
+
+    // checkDeepSleepTaskCanBeAdded — внутренняя (static в Task.cpp).
+
+    void beforeEnterSleep(std::function<void(SleepMode)> callback);
+    void afterWakeUp(std::function<void(SleepMode)> callback);
+
+    void callTaskExecute(void *arg);
+    void notifyActiveTaskCancelled(Task & task);
+
+    Task * onDelay(SleepMode sleepMode, Duration * delay, Core core, std::function<void(Task &)> callback);
+    template<SleepMode sleepMode>
+    Task * onDelay(Duration * delay, Core core, std::function<void(Task &)> callback) {
+        return onDelay(sleepMode, delay, core, callback);
+    }
+    template<SleepMode sleepMode>
+    Task * onDelay(Duration * delay, std::function<void(Task &)> callback) {
+        return onDelay<sleepMode>(delay, CURRENT_CORE, callback);
+    }
+
+    Task * onRepeat(SleepMode sleepMode, Duration * interval, Duration * startDelay, Core core, std::function<void(Task &)> callback);
+    template<SleepMode sleepMode>
+    Task * onRepeat(Duration * interval, Duration * startDelay, Core core, std::function<void(Task &)> callback) {
+        return onRepeat(sleepMode, interval, startDelay, core, callback);
+    }
+    template<SleepMode sleepMode>
+    Task * onRepeat(Duration * interval, Duration * startDelay, std::function<void(Task &)> callback) {
+        return onRepeat(sleepMode, interval, startDelay, CURRENT_CORE, callback);
+    }
+    template<SleepMode mode>
+    Task * onRepeat(Duration * interval, Core core, std::function<void(Task &)> callback) {
+        return onRepeat<mode>(interval, interval, core, callback);
+    }
+    template<SleepMode sleepMode>
+    Task * onRepeat(Duration * interval, std::function<void(Task &)> callback) {
+        return onRepeat<sleepMode>(interval, interval, CURRENT_CORE, callback);
+    }
+
+    Task * onDemand(Core core, std::function<void(Task &)> callback);
+    Task * onDemand(std::function<void(Task &)> callback);
+
+    Task * onOnce(Core core, std::function<void(Task &)> callback);
+    Task * onOnce(std::function<void(Task &)> callback);
+    Task * onOnce(Core core, Task * task);
+
+    Task * onInit(Core core, std::function<void(Task &)> callback);
+
+    Task * onTick(Core core, std::function<void(Task &)> callback);
+    Task * onTick(std::function<void(Task &)> callback);
 
 }

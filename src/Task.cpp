@@ -1,7 +1,11 @@
 #include <async/Task.h>
 #include <async/Executor.h>
+#include <async/Globals.h>
+#include "sys/time.h"
+#include "esp_timer.h"
+#include "esp_system.h"
 
-using namespace async;
+namespace async {
 
 Task::Task(Type type, SleepMode sleepMode, Core core, Duration * delay, Duration * interval, std::function<void(Task &)> callback)
     : type(type), sleepMode(sleepMode), core(core), delay(delay), interval(interval), callback(callback) {
@@ -117,4 +121,216 @@ void Task::cancel() {
 
     cancelled = true;
     next = UINT64_MAX;
+}
+
+// ===== API планирования задач =====
+
+    std::vector<Task *> getCoreTasks(Core core) {
+        return coreTasks[core];
+    }
+
+    TaskHandle_t getCoreTaskHandler(Core core) {
+        return coreTaskHandlers[core];
+    }
+
+    // Внутренняя: проверяет, что Deep-задача добавляется до старта шедулера.
+    static void checkDeepSleepTaskCanBeAdded() {
+        if (isStarted()) {
+            esp_system_abort("Deep tasks can only be added before the start() method.");
+        }
+    }
+
+    void beforeEnterSleep(std::function<void(SleepMode)> callback) {
+        beforeEnterSleepCallback[CURRENT_CORE].push_back(callback);
+    }
+
+    void afterWakeUp(std::function<void(SleepMode)> callback) {
+        afterWakeUpCallback[CURRENT_CORE].push_back(callback);
+    }
+
+    void callTaskExecute(void *arg) {
+        Task *task = (Task *)arg;
+        task->execute();
+
+        // одноразовая active-задача отстрелялась — снимаем с учёта
+        if (task->getSleepMode() == SleepMode::Active && task->getType() == Type::DELAY && task->isCounted()) {
+            activeTasksCount--;
+            task->setCounted(false);
+        }
+    }
+
+    void notifyActiveTaskCancelled(Task & task) {
+        if (task.getSleepMode() == SleepMode::Active && task.isCounted()) {
+            activeTasksCount--;
+            task.setCounted(false);
+        }
+    }
+
+    Task * onDelay(SleepMode sleepMode, Duration *delay, Core core, std::function<void(Task &)> callback) {
+        auto task = new Task(Type::DELAY, sleepMode, core, delay, callback);
+
+        if (sleepMode == SleepMode::Active) {
+            activeTasksCount++;
+            task->setCounted(true);
+            esp_timer_handle_t * _timer = new esp_timer_handle_t;
+            *_timer = nullptr;
+            esp_timer_create_args_t config = {
+                .callback = callTaskExecute,
+                .arg = task,
+                .dispatch_method = ESP_TIMER_TASK,
+                .skip_unhandled_events = false
+            };
+
+            ESP_ERROR_CHECK(esp_timer_create(&config, _timer));
+
+            if (*_timer == nullptr) {
+                esp_system_abort("Failed to create timer of active task");
+            }
+
+            ESP_ERROR_CHECK(esp_timer_start_once(*_timer, delay->us()));
+            task->setTimer(_timer);
+            task->setNext(task->getDelay());
+        } else {
+            if (sleepMode == SleepMode::Deep) {
+                checkDeepSleepTaskCanBeAdded();
+            }
+            else if (sleepMode == SleepMode::Light) {
+                // onDelay (DELAY): relative (rts + delay) — иначе вложенный onDelay, зарегистрированный
+                // при rts > delay, срабатывает сразу. onRepeat (REPEAT): абсолютный delay — repeat-логика
+                // (+= interval) и restore после deep sleep рассчитаны на абсолютные значения.
+                task->setNext(task->getType() == Type::DELAY ? (uint64_t) rts_us() + (uint64_t) task->getDelay()
+                                                              : (uint64_t) task->getDelay());
+            }
+
+            if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
+                // Слот deepTasksTimeFast должен совпадать с ФИНАЛЬНОЙ позицией deep-задачи
+                // в coreTasks: после удаления INIT-задач deep-задачи сдвигаются в начало.
+                // Поэтому считаем уже зарегистрированные DEEP-задачи, а не весь размер
+                // вектора — иначе INIT-задача в начале списка завышает idx и тайминг
+                // попадает мимо слота (deep-задача читает 0 и срабатывает сразу при старте).
+                size_t idx = 0;
+                for (Task * t : coreTasks[core]) {
+                    if (t->getSleepMode() == SleepMode::Deep) idx++;
+                }
+                if (idx < DEEP_TASKS_STACK) {
+                    // onDelay → relative (см. ветку Light); onRepeat → абсолютный delay.
+                    deepTasksTimeFast[core][idx] = (task->getType() == Type::DELAY) ? (uint64_t) rts_us() + (uint64_t) task->getDelay()
+                                                                                    : (uint64_t) task->getDelay();
+                } else {
+                    ESP_LOGE(TAG_EXECUTOR, "DEEP_TASKS_STACK (%d) exceeded on core %d", DEEP_TASKS_STACK, core);
+                }
+            }
+
+            coreTasks[core].push_back(task);
+        }
+
+        return task;
+    }
+
+    Task * onRepeat(SleepMode sleepMode, Duration *interval, Duration *startDelay, Core core,
+                    std::function<void(Task &)> callback) {
+        auto task = new Task(Type::REPEAT, sleepMode, core, startDelay, interval, callback);
+
+        if (sleepMode == SleepMode::Active) {
+            activeTasksCount++;
+            task->setCounted(true);
+            esp_timer_handle_t * _timer = new esp_timer_handle_t;
+            *_timer = nullptr;
+            esp_timer_create_args_t config = {
+                .callback = callTaskExecute,
+                .arg = task,
+                .dispatch_method = ESP_TIMER_TASK,
+                .skip_unhandled_events = false
+            };
+
+            ESP_ERROR_CHECK(esp_timer_create(&config, _timer));
+
+            if (*_timer == nullptr) {
+                esp_system_abort("Failed to create timer of active task");
+            }
+
+            ESP_ERROR_CHECK(esp_timer_start_periodic(*_timer, interval->us()));
+            task->setTimer(_timer);
+            task->setNext(task->getDelay());
+        }
+        else {
+            if (sleepMode == SleepMode::Deep) {
+                checkDeepSleepTaskCanBeAdded();
+            }
+            else if (sleepMode == SleepMode::Light) {
+                // onDelay (DELAY): relative (rts + delay) — иначе вложенный onDelay, зарегистрированный
+                // при rts > delay, срабатывает сразу. onRepeat (REPEAT): абсолютный delay — repeat-логика
+                // (+= interval) и restore после deep sleep рассчитаны на абсолютные значения.
+                task->setNext(task->getType() == Type::DELAY ? (uint64_t) rts_us() + (uint64_t) task->getDelay()
+                                                              : (uint64_t) task->getDelay());
+            }
+
+            if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
+                // Слот deepTasksTimeFast должен совпадать с ФИНАЛЬНОЙ позицией deep-задачи
+                // в coreTasks: после удаления INIT-задач deep-задачи сдвигаются в начало.
+                // Поэтому считаем уже зарегистрированные DEEP-задачи, а не весь размер
+                // вектора — иначе INIT-задача в начале списка завышает idx и тайминг
+                // попадает мимо слота (deep-задача читает 0 и срабатывает сразу при старте).
+                size_t idx = 0;
+                for (Task * t : coreTasks[core]) {
+                    if (t->getSleepMode() == SleepMode::Deep) idx++;
+                }
+                if (idx < DEEP_TASKS_STACK) {
+                    // onDelay → relative (см. ветку Light); onRepeat → абсолютный delay.
+                    deepTasksTimeFast[core][idx] = (task->getType() == Type::DELAY) ? (uint64_t) rts_us() + (uint64_t) task->getDelay()
+                                                                                    : (uint64_t) task->getDelay();
+                } else {
+                    ESP_LOGE(TAG_EXECUTOR, "DEEP_TASKS_STACK (%d) exceeded on core %d", DEEP_TASKS_STACK, core);
+                }
+            }
+
+            coreTasks[core].push_back(task);
+        }
+
+        return task;
+    }
+
+    Task * onDemand(Core core, std::function<void(Task &)> callback) {
+        return new Task(Type::DEMAND, SleepMode::None, core, callback);
+    }
+
+    Task * onDemand(std::function<void(Task &)> callback) {
+        return new Task(Type::DEMAND, SleepMode::None, CURRENT_CORE, callback);
+    }
+
+    Task * onOnce(Core core, std::function<void(Task &)> callback) {
+        auto task = new Task(Type::ONCE, SleepMode::Active, core, callback);
+        task->setCertainly(true);
+        coreTasks[core].push_back(task);
+        return task;
+    }
+
+    Task * onOnce(std::function<void(Task &)> callback) {
+        return onOnce(CURRENT_CORE, callback);
+    }
+
+    Task * onOnce(Core core, Task * task) {
+        task->setCertainly(true);
+        coreTasks[core].push_back(task);
+        return task;
+    }
+
+    Task * onInit(Core core, std::function<void(Task &)> callback) {
+        auto task = new Task(Type::INIT, SleepMode::Active, core, callback);
+        task->setCertainly(true);
+        coreTasks[core].push_back(task);
+        return task;
+    }
+
+    Task * onTick(Core core, std::function<void(Task &)> callback) {
+        auto task = new Task(Type::TICK, SleepMode::Active, core, callback);
+        task->setNext(0);
+        coreTasks[core].push_back(task);
+        return task;
+    }
+
+    Task * onTick(std::function<void(Task &)> callback) {
+        return onTick(CURRENT_CORE, callback);
+    }
+
 }

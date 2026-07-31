@@ -1,4 +1,4 @@
-#include <async/Definitions.h>
+#include <async/Globals.h>
 
 namespace async {
     bool startFlag = false;
