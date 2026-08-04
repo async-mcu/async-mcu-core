@@ -54,7 +54,7 @@ inline T minInArray(const T * arr, size_t n) {
 #define INIT_ARRAY(val, n) INIT_ARRAY_N(n, val)
 
 #define CURRENT_CORE (esp_cpu_get_core_id() == 0 ? CORE0 : CORE1)
-#define DEEP_TASKS_STACK 2
+#define DEEP_TASKS_STACK 20
 
 // Arduino-style константы
 #define LOW               0x0
