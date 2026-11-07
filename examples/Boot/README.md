@@ -56,6 +56,10 @@ async::Boot boot0([]() {
 **все огни, включая первый**, попадают ровно в дедлайн (2000/4000/…, ±единицы мс). Цена —
 `setup()` удлиняется на ~98 мс (калибровочный сон + его wake-boot).
 
+> **Устарело (2026-11-07):** калибровочный сон удалён из кода коммитом `695bb65`
+> (issues.md #21, переоткрыт). Сейчас сетка стабильна (без пропусков/дублей), но огни
+> идут с постоянным смещением ~+60–70 мс от дедлайна — см. отчёт о проверке ниже.
+
 ## Ожидаемый вывод
 
 ```
@@ -77,5 +81,31 @@ I (115) CORE0: Repeat task 0, every 2000 ms, time: 8000 ms
 
 ```bash
 pio run -e boot -t upload
-PYTHONIOENCODING=utf-8 pio device monitor -p COM10
+PYTHONIOENCODING=utf-8 pio device monitor -p COM11
+```
+
+## Отчёт о проверке
+
+- **Дата:** 2026-11-07
+- **Платформа:** `pioarduino/platform-espressif32#55.03.35`, плата `esp32dev`,
+  порт COM11 (USB-SERIAL CH340)
+- **Фреймворк:** Arduino-ESP32 **3.3.5**, ESP-IDF **5.5.1**
+- **Окно наблюдения:** ~26 с, по 13 огней на ядро.
+- **Результат:** OK с известной оговоркой. Сетка стабильна, пропусков и дублей нет:
+  `CORE0` — 2067, 4067, 6067, …, 26067 мс (шаг 2000); `CORE1` — 2567, 5067, …,
+  25067 мс (шаг 2500); одновременный огонь обоих ядер на 10067 мс совпал.
+  Постоянное смещение **+67 мс** от сетки — открытая проблема **#21** (issues.md):
+  компенсация wake-латентси удалена из кода (см. пометку в «Точный каденс» выше).
+
+```
+rst:0x5 (DEEPSLEEP_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+I (57) CORE0: Repeat task 0, every 2000 ms, time: 2067 ms
+rst:0x5 (DEEPSLEEP_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+I (57) CORE1: Repeat task 1, every 2500 ms, time: 2567 ms
+rst:0x5 (DEEPSLEEP_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+I (57) CORE0: Repeat task 0, every 2000 ms, time: 4067 ms
+...
+rst:0x5 (DEEPSLEEP_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+I (57) CORE1: Repeat task 1, every 2500 ms, time: 10067 ms
+I (57) CORE0: Repeat task 0, every 2000 ms, time: 10067 ms
 ```

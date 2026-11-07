@@ -18,17 +18,26 @@ namespace async {
     // sleepReadyMutex — file-local (static), используется только шедулером.
     static SemaphoreHandle_t sleepReadyMutex = NULL;
 
-    static void mainLoop(void * parameter) {
+    static void coreWorker(void * parameter) {
         int core = (int) parameter;
         std::vector<Task *> toExecute;
 
-        ESP_LOGV(TAG_EXECUTOR, "mainLoop from core %d curr time: %llu", core, rtcBoot);
+        ESP_LOGV(TAG_EXECUTOR, "coreWorker from core %d curr time: %llu", core, rtcBoot);
 
         while (true) {
             uint64_t startCycleTime = esp_timer_get_time();
             uint64_t startCycleTimeRts = rts_us(); // deep: та же шкала, что у next и у программирования сна
 
             toExecute.clear();
+
+            // Дреин входящих: после старта регистрация идёт через coreIncomingQueue + notify,
+            // поэтому push_back в coreTasks выполняется только здесь, в этом worker-потоке.
+            if (coreIncomingQueue[core] != NULL) {
+                Task * incoming;
+                while (xQueueReceive(coreIncomingQueue[core], &incoming, 0) == pdTRUE) {
+                    coreTasks[core].push_back(incoming);
+                }
+            }
 
             coreSleepReady[core] = false;
             bool localLightExists = false;
@@ -85,7 +94,13 @@ namespace async {
                                     localLightExists = true;
                                     coreTasks[core][i]->setNext(coreTasks[core][i]->getNext() + coreTasks[core][i]->getInterval());
                                 }
-                            } else {
+                            } else if (coreTasks[core][i]->getType() == Type::DELAY && !isDeep) {
+                                // §5: non-deep DELAY удаляется после исполнения → убрать из coreTasks,
+                                // Фаза 4 сделает delete. (deep-DELAY оставляем dormant — удаление
+                                // в рантайме нарушает привязку deep-тайминга к позиции; уберётся в §6.)
+                                coreTasks[core].erase(coreTasks[core].begin() + i);
+                                i--;
+                            } else {  // deep-DELAY (dormant) либо INTERR (мёртвый тип — задел)
                                 if(deepSlotOk) {
                                     deepTasksTimeFast[core][i] = UINT64_MAX;
                                 }
@@ -102,11 +117,6 @@ namespace async {
 
                         ESP_LOGV(TAG_EXECUTOR, "PostTask %d, next: %llu, minSleepTime: %llu", i, next, localMinSleep);
                     }
-                    else if(coreTasks[core][i]->getSleepMode() == SleepMode::Light) {
-                        delete coreTasks[core][i];
-                        coreTasks[core].erase(coreTasks[core].begin() + i);
-                        i--;
-                    }
                 }
             }
 
@@ -122,7 +132,8 @@ namespace async {
 
                 for (Task * task : toExecute) {
                     task->execute();
-                    if (task->getType() == Type::ONCE) {
+                    if (task->getType() == Type::ONCE ||
+                        (task->getType() == Type::DELAY && task->getSleepMode() != SleepMode::Deep)) {
                         delete task;
                     }
                 }
@@ -145,7 +156,7 @@ namespace async {
                         uint64_t pinsMask = 0;
 
                         for (auto interruptParam : getGlobalInterruptParams()) {
-                            if (interruptParam->sleepMode == SleepMode::Deep && !(pinsMask & (1 << interruptParam->pin.getPin()))) {
+                            if (interruptParam->sleepMode == SleepMode::Deep && !(pinsMask & (1ULL << interruptParam->pin.getPin()))) {
                                 ESP_LOGV(TAG_EXECUTOR, "add deep sleep pin: %d", interruptParam->pin.getPin());
                                 pinsMask |= (1ULL << interruptParam->pin.getPin());
 
@@ -199,6 +210,11 @@ namespace async {
 
                         for (int core_num = 0; core_num < SOC_CPU_CORES_NUM; core_num++) {
                             coreSleepReady[core_num] = false;
+                            // Разбудить соседний worker: после аппаратного сна он мог остаться
+                            // в ulTaskNotifyTake (Этап 1) — иначе провиснет до дедлайна/notify.
+                            if (coreTaskHandlers[core_num] != NULL) {
+                                xTaskNotifyGive(coreTaskHandlers[core_num]);
+                            }
                             for(auto & callback : afterWakeUpCallback[core_num]) {
                                 callback(SleepMode::Light);
                             }
@@ -216,7 +232,7 @@ namespace async {
 
                         uint64_t pinsMask = 0;
                         for (auto interruptParam : getGlobalInterruptParams()) {
-                            if (interruptParam->sleepMode == SleepMode::Deep && !(pinsMask & (1 << interruptParam->pin.getPin()))) {
+                            if (interruptParam->sleepMode == SleepMode::Deep && !(pinsMask & (1ULL << interruptParam->pin.getPin()))) {
                                 ESP_LOGV(TAG_EXECUTOR, "add deep sleep pin: %d", interruptParam->pin.getPin());
                                 pinsMask |= (1ULL << interruptParam->pin.getPin());
                             }
@@ -258,6 +274,24 @@ namespace async {
                         esp_deep_sleep_start();
                     }
                 xSemaphoreGive(sleepReadyMutex);
+            } else {
+                // Сосед занят или замок сна занят — аппаратный сон не начинается.
+                // Вместо busy-spin блокируемся до ближайшего дедлайна (woke по таймауту)
+                // или до notify о новой работе (кросс-ядерная регистрация / ISR). Этап 1.
+                TickType_t timeoutTicks;
+                if (localMinSleep == UINT64_MAX) {
+                    timeoutTicks = portMAX_DELAY;
+                } else {
+                    int64_t usLeft = (int64_t) localMinSleep - (int64_t) esp_timer_get_time();
+                    if (usLeft <= 0) {
+                        timeoutTicks = 0;
+                    } else {
+                        uint64_t usPerTick = (uint64_t) portTICK_PERIOD_MS * 1000ULL;
+                        uint64_t ticks = (uint64_t) usLeft / usPerTick;
+                        timeoutTicks = (ticks >= (uint64_t) portMAX_DELAY) ? portMAX_DELAY : (TickType_t) ticks;
+                    }
+                }
+                ulTaskNotifyTake(pdTRUE, timeoutTicks);
             }
         }
     }
@@ -290,6 +324,12 @@ namespace async {
         }
         setStarted(true);
 
+        // Очереди кросс-контекстной регистрации (Этап 1): создаются до возможных
+        // регистраций из afterWakeUp-колбэков ниже и до запуска worker'ов.
+        for (int core = 0; core < SOC_CPU_CORES_NUM; core++) {
+            coreIncomingQueue[core] = xQueueCreate(32, sizeof(Task *));
+        }
+
         // Метка «настоящего» старта (power-on / soft-reset); на выходе из deep sleep не логируем.
         if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
             ESP_LOGI(TAG_EXECUTOR, ">>> Async started (reset_reason=%d)", (int) esp_reset_reason());
@@ -319,7 +359,7 @@ namespace async {
             for (int core = 0; core < SOC_CPU_CORES_NUM; core++) {
                 for (int i = 0; i < DEEP_TASKS_STACK; i++) {
                     deepTasksTimeFast[core][i] = deepTasksTime[core][i];
-                    ESP_LOGI(TAG_EXECUTOR, "start deepTasksTimeFast[%d][%d] to %llu", core, i, deepTasksTime[core][i]);
+                    ESP_LOGD(TAG_EXECUTOR, "start deepTasksTimeFast[%d][%d] to %llu", core, i, deepTasksTime[core][i]);
                 }
 
                 for(auto & callback : afterWakeUpCallback[core]) {
@@ -334,7 +374,7 @@ namespace async {
         }
 
         for (int core = 0; core < SOC_CPU_CORES_NUM; core++) {
-            xTaskCreatePinnedToCore(mainLoop,
+            xTaskCreatePinnedToCore(coreWorker,
                                     "",
                                     10000,
                                     (void *) core,

@@ -24,6 +24,13 @@ Task::Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task &)
 
 Task::~Task() {
     ESP_LOGV(TAG_TASK, "Remove task sleep mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
+    // Сначала таймер: пока он жив, колбэк esp_timer может читать delay/interval —
+    // освобождать члены можно только после esp_timer_delete.
+    if(timer != nullptr) {
+        esp_timer_delete(*timer);
+        delete timer;
+        timer = nullptr;
+    }
     // delay и interval могут указывать на один объект: перегрузки onRepeat(interval,…)
     // передают interval и как startDelay, и как interval (Executor.h). Удалить один раз.
     bool delayIsInterval = (delay != nullptr && interval == delay);
@@ -34,11 +41,6 @@ Task::~Task() {
     if(interval != nullptr && !delayIsInterval) {
         delete interval;
         interval = nullptr;
-    }
-    if(timer != nullptr) {
-        esp_timer_delete(*timer);
-        delete timer;
-        timer = nullptr;
     }
 }
 
@@ -140,6 +142,19 @@ void Task::cancel() {
         }
     }
 
+    // Регистрация задачи на ядро. До старта — прямой push_back (worker'ов ещё нет);
+    // после старта — через очередь coreIncomingQueue + notify, чтобы push_back в coreTasks
+    // шёл только из worker-потока ядра-адресата (исключает гонку с кросс-контекстной
+    // регистрацией из ISR-dispatcher / соседнего ядра / колбэков). См. EXECUTOR.md §6.3, §6.9.
+    static void registerTask(Core core, Task * task) {
+        if (isStarted() && coreIncomingQueue[core] != NULL) {
+            xQueueSend(coreIncomingQueue[core], &task, portMAX_DELAY);
+            xTaskNotifyGive(coreTaskHandlers[core]);
+        } else {
+            coreTasks[core].push_back(task);
+        }
+    }
+
     void beforeEnterSleep(std::function<void(SleepMode)> callback) {
         beforeEnterSleepCallback[CURRENT_CORE].push_back(callback);
     }
@@ -221,7 +236,7 @@ void Task::cancel() {
                 }
             }
 
-            coreTasks[core].push_back(task);
+            registerTask(core, task);
         }
 
         return task;
@@ -284,7 +299,7 @@ void Task::cancel() {
                 }
             }
 
-            coreTasks[core].push_back(task);
+            registerTask(core, task);
         }
 
         return task;
@@ -301,7 +316,7 @@ void Task::cancel() {
     Task * onOnce(Core core, std::function<void(Task &)> callback) {
         auto task = new Task(Type::ONCE, SleepMode::Active, core, callback);
         task->setCertainly(true);
-        coreTasks[core].push_back(task);
+        registerTask(core, task);
         return task;
     }
 
@@ -311,21 +326,21 @@ void Task::cancel() {
 
     Task * onOnce(Core core, Task * task) {
         task->setCertainly(true);
-        coreTasks[core].push_back(task);
+        registerTask(core, task);
         return task;
     }
 
     Task * onInit(Core core, std::function<void(Task &)> callback) {
         auto task = new Task(Type::INIT, SleepMode::Active, core, callback);
         task->setCertainly(true);
-        coreTasks[core].push_back(task);
+        registerTask(core, task);
         return task;
     }
 
     Task * onTick(Core core, std::function<void(Task &)> callback) {
         auto task = new Task(Type::TICK, SleepMode::Active, core, callback);
         task->setNext(0);
-        coreTasks[core].push_back(task);
+        registerTask(core, task);
         return task;
     }
 

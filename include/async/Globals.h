@@ -13,6 +13,7 @@
 #include <atomic>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "sys/time.h"
 
 // === Макросы (бывш. Definitions.h) ===
@@ -140,6 +141,10 @@ namespace async {
     // inline даёт один общий символ на все единицы трансляции — можно определять прямо в header.
     inline std::vector<Task *> coreTasks[SOC_CPU_CORES_NUM];
     inline TaskHandle_t coreTaskHandlers[SOC_CPU_CORES_NUM];
+    // Очередь входящих задач после старта: кросс-контекстная регистрация (ISR-dispatcher,
+    // соседнее ядро, колбэки) кладёт сюда Task* и будит worker notify. Worker дреинит
+    // очередь в начале цикла — push_back в coreTasks идёт только из своего потока.
+    inline QueueHandle_t coreIncomingQueue[SOC_CPU_CORES_NUM] = {};
     inline std::vector<std::function<void(SleepMode)>> beforeEnterSleepCallback[SOC_CPU_CORES_NUM];
     inline std::vector<std::function<void(SleepMode)>> afterWakeUpCallback[SOC_CPU_CORES_NUM];
 

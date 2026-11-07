@@ -68,5 +68,31 @@ I (..) MAIN: handle onChange: prev 0x3ff... -> current 0x0  <- setNull()
 
 ```bash
 pio run -e state_simple -t upload
-PYTHONIOENCODING=utf-8 pio device monitor -p COM10
+PYTHONIOENCODING=utf-8 pio device monitor -p COM11
+```
+
+## Отчёт о проверке
+
+- **Дата:** 2026-11-07
+- **Платформа:** `pioarduino/platform-espressif32#55.03.35`, плата `esp32dev`,
+  порт COM11 (USB-SERIAL CH340)
+- **Фреймворк:** Arduino-ESP32 **3.3.5**, ESP-IDF **5.5.1**
+- **Результат:** OK — вывод совпал с «Ожидаемым выводом» построчно: 4 изменения
+  `value` (0→10, 10→11, 11→42, 42→142) с парой строк на каждое (оба подписчика);
+  `setIfChanged(11)` и `setIfChanged(cb same)` не породили `onChange`; `final value: 142`;
+  `handle`: `0x0 → 0x3ffbdb70 → 0x0`. Отложенность `onChange` видна по таймстампам:
+  синхронные логи на 9–21 мс, `onChange` — на 165–201 мс (первый цикл планировщика).
+
+```
+I (9) MAIN: setIfChanged(11): changed=0
+I (10) MAIN: setIfChanged(42): changed=1
+I (10) MAIN: setIfChanged(cb same): 42
+I (10) MAIN: setIfChanged(cb +100): 142
+I (13) MAIN: final value: 142
+I (165) MAIN: onChange: prev 0 -> current 10
+I (169) MAIN: observer: value is now 10
+I (172) MAIN: onChange: prev 10 -> current 11
+...
+I (195) MAIN: handle onChange: prev 0x0 -> current 0x3ffbdb70
+I (201) MAIN: handle onChange: prev 0x3ffbdb70 -> current 0x0
 ```

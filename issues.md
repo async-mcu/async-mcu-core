@@ -2,8 +2,18 @@
 
 > **Этот документ самодостаточен** — рассчитан на чтение в новой сессии без истории
 > разработки. Все проблемы проверены чтением исходного кода (не статическими
-> подозрениями). Дата аудита: 2026-07-30. Покрытие: `include/async/*.h`, `src/*.cpp`
-> (~3580 LOC). Статус: **#1, #5, #14, #17, #21 исправлены**, **#4 закрыт** (не баг), **#6 частично** (слот регистрации), остальные — открыты.
+> подозрениями). Дата аудита: 2026-07-30; дополнено 2026-08-21 (полная проверка:
+> сборка всех 26 env + прошивка executor_light/mixed, HEAD и рабочего дерева);
+> чистка 2026-11-07: исправленные записи (**#1, #2, #5, #14, #17** — фиксы в коде
+> подтверждены) удалены из документа; **#21 переоткрыт** — его фикс (калибровка
+> wake-латентси deep sleep) удалён из кода коммитом `695bb65`. Тогда же исправлены и
+> удалены **#11** (`1ULL << pin`) и **#15** (порядок в `~Task`) — проверено сборкой
+> `executor_light`.
+> Покрытие: `include/async/*.h`, `src/*.cpp` (~3580 LOC) + `examples/`.
+> Статус: **#4 закрыт** (не баг), **#6 частично** (слот регистрации), **#21 переоткрыт**
+> (регрессия), остальные — открыты.
+> Нумерация сохранена как идентификаторы: пропуски в номерах — удалённые исправленные
+> записи (сами фиксы живы в коде и истории git).
 
 Тяжесть: 🔴 критичная (краш/память/гонка) · 🟠 высокая (DoS/некорректное поведение) ·
 🟡 средняя (пограничные случаи/утечки) · ⚪ низкая (API/стиль/компоновка).
@@ -22,24 +32,28 @@ FreeRTOS, **двухъядерный**). Сборка через PlatformIO. П�
   `pin_active_interrupt`, `pin_light_sleep_interrupt`, `http_simple`, `executor_*`.
 - **Сборка:** `pio run -e <env>` (холодная ~30 с).
 - **Прошивка+монитор:** см. `CLAUDE.md` (`PYTHONIOENCODING=utf-8` обязательно).
-- **Текущее состояние репо (ветка `upd`):** недавно добавлен макрос
-  `ASYNC_EXT1_WAKEUP_LOW` (`include/async/Executor.h`) — `ALL_LOW` на классическом ESP32,
-  `ANY_LOW` на S3/S2/C3; убран мёртвый `#include <esp_gatt_defs.h>` из `Uuid.h` (теперь
-  проект собирается и под S3). Пример `DeepSleepInterruptPullUp` переведён с GPIO12 на
-  GPIO26 (MTDI-проблема).
+- **Текущее состояние репо (ветка `upd`):** в рабочем дереве — Этап 1 worker-модели
+  (регистрация задач после старта через `coreIncomingQueue` + notify, см. §1 и
+  EXECUTOR.md §6.3, §6.9); макрос `ASYNC_EXT1_WAKEUP_LOW` (`include/async/Executor.h`) —
+  `ALL_LOW` на классическом ESP32, `ANY_LOW` на S3/S2/C3; убран мёртвый
+  `#include <esp_gatt_defs.h>` из `Uuid.h` (проект собирается и под S3). Пример
+  `DeepSleepInterruptPullUp` переведён с GPIO12 на GPIO26 (MTDI-проблема).
 
 ---
 
 ## 1. Архитектура (нужно понимать контекст багов)
 
 ### Планировщик
-- `startAsync()` создаёт по задаче FreeRTOS `mainLoop` на **каждое ядро** (pinned), каждая
-  итерирует свой список `coreTasks[core]` (`src/Executor.cpp:17`).
-- **Цикл `mainLoop`** (`src/Executor.cpp:237-480`): сканирует `coreTasks[core]`, собирает
-  «дозревшие» задачи в `toExecute`, выполняет, считает per-core флаги
-  (`lightTasksExists`, `tickTasksExists`, `minSleepTime`), публикует их, затем решает, спать
-  ли. Координация сна — через `sleepReadyMutex` (`:36`): **только одно ядро** заходит в
-  критическую секцию входа в sleep и выбирает Light/Deep.
+- `startAsync()` (`src/Executor.cpp:321-385`) создаёт по задаче FreeRTOS `coreWorker`
+  на **каждое ядро** (pinned, `:376-384`), каждая итерирует свой список `coreTasks[core]`.
+- **Цикл `coreWorker`** (`src/Executor.cpp:21-297`): дреинит очередь входящих
+  `coreIncomingQueue[core]` (`:35-40` — после старта вся регистрация идёт через неё,
+  `push_back` в `coreTasks` выполняет только worker ядра-адресата, `src/Task.cpp:147-154`),
+  сканирует `coreTasks[core]`, собирает «дозревшие» задачи в `toExecute`, выполняет, считает
+  per-core флаги (`lightTasksExists`, `tickTasksExists`, `minSleepTime`), публикует их
+  (`:126-128`), затем решает, спать ли. Координация сна — через `sleepReadyMutex`
+  (`Executor.cpp:19`): **только одно ядро** заходит в критическую секцию входа в sleep и
+  выбирает Light/Deep.
 - **Deep sleep = полный сброс чипа** → `setup()` выполняется заново при каждом
   пробуждении. Переменные `RTC_DATA_ATTR` переживают сброс (`deepTasksTime`,
   `deepInterruptsRevert`, `deepInterruptsMode`).
@@ -56,18 +70,18 @@ FreeRTOS, **двухъядерный**). Сборка через PlatformIO. П�
 - **Light** — тайминг в `Task::next`; ядро может light-sleep между срабатываниями.
 - **Deep** — тайминг хранится в **позиционном** массиве `deepTasksTimeFast[core][i]`
   (рабочая копия) и `RTC_DATA_ATTR deepTasksTime` (переживает сброс); копируется перед
-  уходом в deep sleep (`Executor.cpp:426-430`).
+  уходом в deep sleep (`Executor.cpp:225-229`).
 
 ### Диспетч прерываний
-- GPIO ISR `Pin::ISR` (`src/Pin.cpp:347`) → `gpio_intr_disable` → `Pin::interrupt()`
-  (`:41`) → если `!interrupted`, выставить флаг и положить `Pin*` в статическую очередь
+- GPIO ISR `Pin::ISR` (`src/Pin.cpp:352`) → `gpio_ll_intr_disable` → `Pin::interrupt()`
+  (`:42`) → если `!interrupted`, выставить флаг и положить `Pin*` в статическую очередь
   `irqQueue` (через `xQueueSendFromISR`).
-- Задача `Pin::irqDispatchTask` (`Pin.cpp:32`, закреплена на **ядро 0**, `:28`) читает
-  очередь и зовёт `pin->interruptTask->schedule()` → `onOnce(core, this)` → кладёт
-  onDemand-задачу пина (`certainly=true`) в `coreTasks[core]`.
-- `mainLoop` выполняет onDemand-задачу пина: переконфигурирует wake-уровень (toggle
-  `revert`), **включает** `gpio_intr` обратно, диспетчерит user-callback'и по типу фронта,
-  сбрасывает `interrupted`.
+- Задача `Pin::irqDispatchTask` (`Pin.cpp:33`, закреплена на **ядро 0**, `:29`) читает
+  очередь и зовёт `pin->interruptTask->schedule()` → `onOnce(core, this)` →
+  `registerTask()` (`Task.cpp:147`) → `coreIncomingQueue[core]` + notify worker'а.
+- Worker ядра-адресата дреинит очередь и выполняет onDemand-задачу пина:
+  переконфигурирует wake-уровень (toggle `revert`), **включает** `gpio_intr` обратно,
+  диспетчерит user-callback'и по типу фронта, сбрасывает `interrupted`.
 
 ### Revert (эмуляция фронтов в deep/light sleep)
 ext0/ext1 и gpio_wakeup будят по **уровню**. Чтобы emulate фронты `RISING`/`FALLING`,
@@ -77,14 +91,17 @@ deepInterruptsRevert` переживает deep sleep.
 
 ### ext0/ext1 выбор
 1 wake-пин → `esp_sleep_enable_ext0_wakeup`; >1 → `esp_sleep_enable_ext1_wakeup_io`
-(`Executor.cpp:444-460`). Уровень: PULLDOWN→`ANY_HIGH`, PULLUP→`ASYNC_EXT1_WAKEUP_LOW`
-(`ALL_LOW` на ESP32 = «все кнопки», `ANY_LOW` на S3+ = «одна кнопка»).
+(`Executor.cpp:243-259`). Уровень: PULLDOWN→`ANY_HIGH`, PULLUP→`ASYNC_EXT1_WAKEUP_LOW`
+(`ALL_LOW` на классическом ESP32 = «все кнопки», `ANY_LOW` на S3+ = «одна кнопка»).
 
-### ⚠️ Ключевой инвариант, порождающий гонки
+### ⚠️ Историческая справка: кросс-ядерная запись в `coreTasks` (контекст закрытого #2)
 **`setup()` Arduino выполняется на ядре 1** → объекты `Pin` по умолчанию на `CORE1` → их
-`interruptTask` на ядре 1. Но `irqDispatchTask` закреплён на **ядре 0** → он пишет в
-`coreTasks[1]` с ядра 0, пока `mainLoop` ядра 1 итерирует этот же вектор. Это корень бага
-#2.
+`interruptTask` на ядре 1. Но `irqDispatchTask` закреплён на **ядре 0** и раньше писал в
+`coreTasks[1]` с ядра 0, пока `coreWorker` ядра 1 итерировал этот же вектор (`std::vector`
+без блокировки → реаллокация под итератором, спорадический Guru Meditation). Гонка закрыта
+очередью `coreIncomingQueue`: `push_back` в `coreTasks` делает только worker-поток
+ядра-адресата (см. EXECUTOR.md §6.3, §6.9); запись #2 удалена из документа как
+исправленная (2026-08-21, рабочее дерево). Остаточные риски механизма — #22–#24.
 
 ---
 
@@ -92,18 +109,17 @@ deepInterruptsRevert` переживает deep sleep.
 
 | Сущность | Объявление | Назначение / замечание |
 |---|---|---|
-| `coreTasks[core]` | `Executor.cpp:17` | per-core `vector<Task*>`; итерируется `mainLoop` **без блокировки** |
-| `deepTasksTimeFast[core][i]` | `Executor.cpp:23` | тайминги Deep-задач **по позиции**; `DEEP_TASKS_STACK=2` (`Definitions.h`) |
-| `deepTasksTime[core][i]` | `Executor.cpp:22` (`RTC_DATA_ATTR`) | переживает deep sleep |
-| `minSleepTime[core]` | `Executor.cpp:30` | `uint64_t`; кросс-ядерное чтение без атомики |
-| `activeTasksCount` | `Executor.cpp:32` | `std::atomic<int>` — сам декремент атомарен, **но** check-then-decrement — нет |
-| `sleepReadyMutex` | `Executor.cpp:36` | охраняет **только** секцию входа в sleep, не `coreTasks` |
-| `globalInterruptParams` | `Interrupt.cpp:12` | `vector<Interrupt*>`; мутация `:60-72` **без блокировки** |
-| `deepInterruptsRevert/mode` | `Interrupt.cpp:10-11` (`RTC_DATA_ATTR`) | состояние deep-wake между сбросами |
-| `Pin::interrupted`, `Pin::revert` | `Pin.h:33-34` | флаги диспетча; окна гонки #3 |
-| `Pin::interruptParams` | `Pin.h:36` | `vector<Interrupt*>`; у `Pin` **нет деструктора** |
-
----
+| `coreTasks[core]` | `Globals.h:142` | per-core `vector<Task*>`; итерируется `coreWorker`; после старта `push_back` только из worker-потока ядра (через `coreIncomingQueue`) |
+| `coreIncomingQueue[core]` | `Globals.h:147` | FreeRTOS-очередь (ёмкость 32, `Executor.cpp:330`) кросс-контекстной регистрации; дреинит только worker ядра (`Executor.cpp:35-40`); остаточные риски #22–#24 |
+| `deepTasksTimeFast[core][i]` | `Globals.h:153` | тайминги Deep-задач **по позиции**; `DEEP_TASKS_STACK=20` (`Globals.h:58`) |
+| `deepTasksTime[core][i]` | `Globals.h:151` (`RTC_DATA_ATTR`) | переживает deep sleep |
+| `minSleepTime[core]` | `Globals.h:160` | `uint64_t`; кросс-ядерное чтение без атомики |
+| `activeTasksCount` | `Globals.h:162` | `std::atomic<int>` — сам декремент атомарен, **но** check-then-decrement — нет |
+| `sleepReadyMutex` | `Executor.cpp:19` | охраняет **только** секцию входа в sleep, не `coreTasks` |
+| `globalInterruptParams` | `Globals.h:173` | `vector<Interrupt*>`; мутация `add/removeGlobalInterruptParam` (`Globals.h:185-196`) **без блокировки** |
+| `deepInterruptsRevert/mode` | `Globals.h:171-172` (`RTC_DATA_ATTR`) | состояние deep-wake между сбросами |
+| `Pin::interrupted`, `Pin::revert` | `Pin.h:33`, `:32` | флаги диспетча; окно гонки #3 |
+| `Pin::interruptParams` | `Pin.h:35` | `vector<Interrupt*>`; у `Pin` **нет деструктора** |
 
 ## 3. Глоссарий
 
@@ -114,62 +130,31 @@ deepInterruptsRevert` переживает deep sleep.
   несколько (классический ESP32: `ALL_LOW`/`ANY_HIGH`; S3+: `ANY_LOW`/`ANY_HIGH`).
 - **RTC-пины** — пины, способные будить из deep sleep (классический ESP32:
   `0,2,4,12,13,14,15,25,26,27,32-39`; 34-39 — только вход, **без** внутренних pull).
-- **DEEP_TASKS_STACK** — лимит (`=2`) числа Deep-задач, хранимых в `deepTasksTimeFast`.
+- **DEEP_TASKS_STACK** — лимит (`=20`, `Globals.h:58`) числа Deep-задач, хранимых в
+  `deepTasksTimeFast`.
 
 ---
 
 ## 4. Проблемы
 
-### ✅ 1. ~~Double-free в `onRepeat`~~ — ИСПРАВЛЕНО (2026-07-30)
-**Где:** `include/async/Executor.h:118` и `:134` → `src/Task.cpp:21-30`
-**Код:**
-```cpp
-// Executor.h:117
-Task * onRepeat(Duration * interval, Core core, ...) {
-    return onRepeat<mode>(interval, interval, core, callback);   // тот же указатель дважды
-}
-// Task.cpp:21  ~Task()
-if(delay != nullptr)  { delete delay;  delay = nullptr;  }
-if(interval != nullptr){ delete interval; interval = nullptr; }  // double-free
-```
-**Контекст:** 3-арг перегрузки передают один `Duration*` и как `delay`, и как `interval`;
-`~Task` удаляет оба без проверки алиасинга.
-**Воспроизведение:** создать `onRepeat<Light>(Duration::ms(500), cb)` и `cancel()` его (или
-любое уничтожение repeat-задачи) → повреждение кучи/краш.
-**Фикс (применён):** `~Task` сделан устойчивым к алиасингу — добавлен флаг
-`delayIsInterval = (delay != nullptr && interval == delay)`, и `interval` удаляется только
-если он не совпадает с `delay` (`src/Task.cpp`). Сборка `executor_light` — OK. Отдельный
-start-delay в `onRepeat` не понадобился: алиасинг предусмотрен дизайном («interval он же
-start delay»).
-**Связано:** #15.
-
-### 🔴 2. Гонка на `coreTasks[core]` — краш на любом активном прерывании
-**Где:** запись `src/Executor.cpp:213-216` (`onOnce` push) из `Pin::irqDispatchTask`
-(`Pin.cpp:32-39`, ядро 0) vs итерация `Executor.cpp:255-328` (erase `:260,:268,:324`)
-**Контекст:** см. инвариант §1 — `setup()` на ядре 1 → пин на `CORE1`, а диспетчер на ядре
-0 пишет в `coreTasks[1]`. `std::vector` без блокировки → реаллокация под итератором.
-**Воспроизведение:** любой пример с `addInterrupt<Active>` + дёрганье линии
-(`pin_active_interrupt`) → спорадический Guru Meditation при обработке прерывания.
-**Фикс:** единый мьютекс на `coreTasks[core]` (взять в `onOnce`/`onTick`/`onDelay`/`onInit`
-и в цикле `mainLoop`), либо lock-free очередь отложенных задач с единым потребителем.
-**Связано:** #13 (тот же класс — общая стратегия блокировок).
-
 ### 🔴 3. Потерянный фронт необратимо «глушит» пин
-**Где:** `src/Pin.cpp:104` (`gpio_intr_enable`) vs `:142` (`interrupted=false`); ISR
-`:347-352`; `interrupt()` `:41-63`
-**Контекст:** в onDemand сначала **включается** прерывание (`:104`), затем user-callback'и,
-и только в конце сбрасывается `interrupted` (`:142`). Фронт в окне `[104,142)` → ISR
-делает `gpio_intr_disable` (`:349`), видит `interrupted==true`, дропает без очереди. После
-`:142` прерывание выключено, а ре-арм (`:104`) живёт только внутри onDemand, который больше
-не запустится.
+**Где:** `src/Pin.cpp:105` (`gpio_intr_enable`) vs `:143` (`interrupted=false`); ISR
+`:352-357`; `interrupt()` `:42-64`
+**Контекст:** в onDemand сначала **включается** прерывание (`:105`), затем user-callback'и,
+и только в конце сбрасывается `interrupted` (`:143`). Фронт в окне `[105,143)` → ISR
+делает `gpio_ll_intr_disable` (`:354`), видит `interrupted==true`, дропает без очереди.
+После `:143` прерывание выключено, а ре-арм (`:105`) живёт только внутри onDemand, который
+больше не запустится.
 **Воспроизведение:** `addInterrupt<Active>(FALLING, …)` на кнопку с дребезгом → после
 первого «глухого» окна пин перестаёт выдавать прерывания до ребута.
 **Фикс:** сначала `interrupted=false`, затем `gpio_intr_enable`; либо ре-арм по
-`digitalRead()` после `:142`.
-**Связано:** #5.
+`digitalRead()` после `:143`.
+**Примечание:** ISR-цепочка (`ISR`/`interrupt`/`digitalRead`) уже IRAM-безопасна
+(IRAM_ATTR + inline-HAL `gpio_ll_*`), так что оба варианта фикса ISR-безопасны по
+построению.
 
 ### ✅ 4. ~~Ложное срабатывание всех INPUT_PULLUP пинов при пробуждении~~ — НЕ БАГ (перепроверено)
-**Где:** `src/Pin.cpp:295-298`
+**Где:** `src/Pin.cpp:295-302`
 **Код:**
 ```cpp
 bool shouldInterrupt = (cause == ESP_SLEEP_WAKEUP_EXT0)
@@ -180,51 +165,26 @@ bool shouldInterrupt = (cause == ESP_SLEEP_WAKEUP_EXT0)
 **Почему это НЕ баг.** Операнд `(currentMode == INPUT_PULLUP)` действительно заставляет
 `this->interrupt()` сработать для каждого pullup-пина при любом ext0/ext1-пробуждении. НО
 multi-pin pullup на классическом ESP32 будится через ext1 **`ALL_LOW`** (макрос
-`ASYNC_EXT1_WAKEUP_LOW`, `Executor.cpp:455`) — чип просыпается **только когда все wake-пины
-LOW**. Следовательно будить «одной кнопкой» в принципе нельзя: чтобы проснуться, **все**
-pullup-пины обязаны быть прижаты к GND, т.е. на каждом реальный фронт FALLING. Так что
-срабатывание всех пинов корректно, а не ложно. Сценарий «нажал пин 26 → idle-пин 13 ложно
-логирует RISING» **невозможен** при `ALL_LOW`. Операнд в худшем случае избыточен
-(A=`ext0`, D=`ext1_wakeup_status` уже покрывают реальный пин), но вреда не несёт.
+`ASYNC_EXT1_WAKEUP_LOW`, применяется в `Executor.cpp:243-259`) — чип просыпается
+**только когда все wake-пины LOW**. Следовательно будить «одной кнопкой» в принципе
+нельзя: чтобы проснуться, **все** pullup-пины обязаны быть прижаты к GND, т.е. на каждом
+реальный фронт FALLING. Так что срабатывание всех пинов корректно, а не ложно. Сценарий
+«нажал пин 26 → idle-пин 13 ложно логирует RISING» **невозможен** при `ALL_LOW`. Операнд
+в худшем случае избыточен (A=`ext0`, D=`ext1_wakeup_status` уже покрывают реальный пин),
+но вреда не несёт.
 **«All buttons required» — это и есть `ALL_LOW`**, аппаратное ограничение классического
 ESP32 (задокументировано в `examples/Pin/DeepSleepInterruptPullUp/README.md`), а не код-баг.
 **Возможный остаточный мелкий эффект (низкая уверенность, не подтверждён):** в revert-цикле
 (после FALLING будит → ждём `ANY_HIGH` на отжатие) удерживаемый LOW-пин может повторно дать
 FALLING без нового фронта. Спекулятивно.
-**Статус:** закрыто — не баг.
-
-### ✅ 5. ~~ISR не в IRAM + `digitalRead()` из прерывания~~ — ИСПРАВЛЕНО (2026-07-30)
-**Где:** `src/Pin.cpp:347-352` → `interrupt()` `:41-42`
-**Контекст:** `Pin::ISR` и `Pin::interrupt()` (в ней `digitalRead()`) не помечены
-`IRAM_ATTR`. Совпадение фронта с отключённым flash-кешем (запись NVS/Preferences, OTA) →
-`Cache disabled but cached memory accessed`. `ESP_DRAM_LOGV` корректен; проблема в
-`digitalRead()`/теле `interrupt()`.
-**Воспроизведение:** активное прерывание + любая flash-операция (собственный `Setting`
-её делает); автономный стресс-тест — `examples/Pin/ActiveInterruptFlash` (молотит NVS,
-пока летят фронты GPIO27→GPIO14).
-**Фикс (применён):** `IRAM_ATTR` проставлен на всю ISR-цепочку — `ISR`, `interrupt()`,
-`digitalRead()`, `getPin()`, `Task::setValue()`; добавлен `#include "hal/gpio_ll.h"`.
-Уровень пина и ре-арм выключения читаются через inline-HAL `gpio_ll_get_level` /
-`gpio_ll_intr_disable` (register-only, инлайнятся в IRAM). Лог — `ESP_DRAM_LOGV`.
-Сборка `pin_active_interrupt_flash` — OK.
-**⚠️ Замечание к исходной формулировке фикса:** предложение «уровень через
-`gpio_get_level` (он в IRAM)» **неверно** для этого IDF (Arduino-ESP32 на ESP-IDF 5.x) —
-высокоуровневые `gpio_get_level`/`gpio_intr_disable` лежат **во flash**. Применён
-правильный вариант — `gpio_ll_*` (inline-HAL).
-**🟡 Остаточный латентный эффект (сейчас не проявляется):** в `ESP_DRAM_LOGV` формат лежит
-в DRAM (`DRAM_STR`, `esp_log.h:475`), но тег `TAG_PIN` (`"PIN"`, `Logging.h`) — указатель
-на **flash**, читается через `%s`. При дефолтном уровне INFO ветка VERBOSE мертва
-(`_ESP_LOG_EARLY_ENABLED` → false) → тег не читается → безопасно. Если поднять глобальный
-уровень до VERBOSE (`CONFIG_LOG_MAXIMUM_LEVEL=5` + default=VERBOSE) — лог в ISR снова
-полезет во flash в окне cache-disable. Робастно: `ESP_DRAM_LOGV(DRAM_STR("PIN"), …)` либо
-убрать этот verbose-лог из ISR.
-**Связано:** #3.
+**Статус:** закрыто — не баг. Запись сохранена, чтобы вопрос не всплывал повторно.
 
 ### 🔴 6. Рассинхрон `deepTasksTimeFast` после удаления задачи
-**Где:** чтение по индексу `src/Executor.cpp:277`; erase `:260, :268, :324, :488`;
-запись в `onDelay` `:131-133`
+**Где:** чтение по индексу `src/Executor.cpp:67-69` (инкремент `:91`, гашение `:105/:108`);
+erase `:52` (certainly), `:59-60` (TICK), `:101` (non-deep DELAY), `:314` (INIT в
+`initAsync`); запись слота в `src/Task.cpp:230` и `:293`
 **Контекст:** тайминги Deep-задач хранятся **по позиции** `deepTasksTimeFast[core][i]`.
-Удаление более ранней задачи (INIT в `initAsync:488`, ONCE/TICK/Light в цикле) сдвигает
+Удаление более ранней задачи (INIT в `initAsync`, ONCE/TICK/Light в цикле) сдвигает
 индексы вниз, массив не пересинхронизируется → Deep-задача читает чужой слот.
 **Воспроизведение:** `onInit(...)` или ONCE-задача, объявленная **перед** Deep-задачей →
 Deep-задача стреляет не в своё время (одноразовая может сработать повторно).
@@ -235,19 +195,25 @@ Deep-задача стреляет не в своё время (одноразо
 `coreTasks.size()`), так что INIT-задача в начале списка больше не завышает индекс и не
 заставляет deep-задачу срабатывать сразу при старте. Runtime-случай (стирание ONCE/TICK/Light
 в цикле сдвигает индекс уже бегущей deep-задачи) — всё ещё открыт.
+**Дополнение (2026-08-21):** Этап 0 добавил ещё один источник стирания из середины —
+non-deep `DELAY` теперь erase'ится сразу после срабатывания (`src/Executor.cpp:101`, Фаза 2).
+После старта не-deep задачи регистрируются только в конец (`push_back` при дреине), поэтому
+инвариант «deep-задачи занимают первые слоты» в рантайме держится; окно риска — не-deep
+задача, зарегистрированная **до старта левее** deep-задачи (deep читает чужой слот, пока
+та не удалится). Снимается целиком в Этапе 3 (тайминг перестаёт быть позиционным, §6.5 EXECUTOR.md).
 
 ### 🟠 7. `activeTasksCount` — двойной декремент (TOCTOU)
-**Где:** `src/Executor.cpp:80-96` (`callTaskExecute`, `notifyActiveTaskCancelled`);
-`src/Task.cpp:106-117` (`cancel`)
+**Где:** `src/Executor.cpp:164-180` (`callTaskExecute`, `notifyActiveTaskCancelled`);
+`src/Task.cpp:113-124` (`cancel`)
 **Контекст:** оба пути `if (isCounted()) { activeTasksCount--; setCounted(false); }` —
 неатомарный компаунд (сам `--` атомарен, `activeTasksCount` — `std::atomic`, но проверка
 `counted` + декремент + очистка — нет). Гонка таймера и `cancel()` → декремент на 2 →
-счётчик в минус → `mainLoop:349` неверно решает о сне.
+счётчик в минус → `coreWorker:143` неверно решает о сне.
 **Воспроизведение:** `onDelay<Active>` с короткой задержкой + `cancel()` из другой задачи
 в момент срабатывания.
 **Фикс:** CAS-цикл, либо отдельный мьютекс active-lifecycle, либо единая точка
 декремента под блокировкой.
-**Связано:** #9, #15.
+**Связано:** #9.
 
 ### 🟠 8. Неограниченные аллокации в HTTP — удалённый DoS
 **Где:** `src/HttpServer.cpp:119` (`body.reserve(_req->content_len)`) и `:219`
@@ -259,34 +225,28 @@ WS-кадр с огромной длиной → немедленный ребу
 **Фикс:** `cap = min(len, MAX_BODY)` (~4–8 КБ); при превышении — отброс тела / 413.
 
 ### 🟠 9. Утечка одноразовых Active-задач (и `Pin::tone`)
-**Где:** `src/Executor.cpp:80-89`; `src/Pin.cpp:390-400` (`tone`)
+**Где:** `src/Executor.cpp:164-173` (`callTaskExecute`); `src/Pin.cpp:398` (`tone`)
 **Контекст:** сработавший `onDelay<Active>` декрементит счётчик, но не удаляет `Task` и не
-зовёт `esp_timer_delete`. Active-задач нет в `coreTasks`, `mainLoop` их не убирает.
+зовёт `esp_timer_delete`. Active-задач нет в `coreTasks`, `coreWorker` их не убирает.
 `tone()` создаёт такой каждый вызов.
 **Воспроизведение:** повторные `pin.tone(freq, duration)` → истощение кучи и пула
 `esp_timer`.
 **Фикс:** в `callTaskExecute` после одноразового Active — `esp_timer_delete` + `delete task`.
-**Связано:** #7, #15.
+**Связано:** #7.
 
 ### 🟡 10. Underflow времени сна → таймер будит через ~2⁶⁴ мкс
-**Где:** `src/Executor.cpp:408` (light) и `:472` (deep); охрана только `!= UINT64_MAX`
-(`:407`, `:471`)
+**Где:** `src/Executor.cpp:201-202` (light) и `:270-271` (deep); охрана только
+`!= UINT64_MAX`
 **Контекст:** между снятием дедлайна (начало цикла) и
 `esp_sleep_enable_timer_wakeup(deadline - now)` выполняются `beforeEnterSleepCallback` и
 конфиг GPIO; если «now» уже прошло → беззнаковое вычитание переполняется.
 **Воспроизведение:** короткий интервал Light/Deep-задачи + долгий `beforeEnterSleep` →
 таймер не срабатывает, ждём только GPIO.
-**Фикс:** пересчитать «now» перед `enable_timer_wakeup`; если дедлайн прошёл — не спать
-или кап в 0.
-
-### 🟡 11. UB `1 << pin` для RTC-пинов ≥ 32
-**Где:** `src/Executor.cpp:365` и `:436`
-**Контекст:** дедуп `pinsMask & (1 << pin)` — `1` это `int`, `pin` бывает 32–39. Сдвиг ≥32
-— UB. Маска копится правильно (`1ULL<<` в `:367,:438`), но `revertedPinsCount`/дедуп криво.
-**Фикс:** `1ULL <<` в обоих местах.
+**Фикс:** пересчитать «now» непосредственно перед `enable_timer_wakeup`; если дедлайн
+прошёл — не спать или кап в 0.
 
 ### 🟡 12. Утечка объектов `Interrupt`
-**Где:** `src/Pin.cpp:310-344` (`removeInterrupt`); `src/Interrupt.cpp:20-29` (`~Interrupt`,
+**Где:** `src/Pin.cpp:314-348` (`removeInterrupt`); `src/Interrupt.cpp:14-23` (`~Interrupt`,
 `cancel`); у `Pin` **нет деструктора** (`Pin.h`)
 **Контекст:** `cancel()`/`removeInterrupt()` убирают указатель из векторов, но не
 `delete`. `Interrupt::~Interrupt()` зовёт `removeInterrupt`, так что явный `delete`
@@ -297,66 +257,23 @@ WS-кадр с огромной длиной → немедленный ребу
 remove — защитить от двойного удаления); добавить `~Pin()`.
 
 ### 🟡 13. Гонка на `globalInterruptParams` (и sleep/wake-колбэки)
-**Где:** итерация `src/Executor.cpp:364, :435`; мутация `src/Interrupt.cpp:60-72`
+**Где:** итерация `src/Executor.cpp:158-167` (light-маска) и `:234-239` (deep-маска);
+мутация `add/removeGlobalInterruptParam` (`Globals.h:185-196`) и
+`beforeEnterSleepCallback`/`afterWakeUpCallback` (`Globals.h:148-149`) **без блокировки**
 **Контекст:** ядро со взятым `sleepReadyMutex` итерирует глобальный список, а второе ядро
-(ещё не спит) в это время может `add/removeGlobalInterruptParam` (без мьютекса) →
-реаллокация под итератором. То же касается
-`beforeEnterSleepCallback`/`afterWakeUpCallback`.
+(ещё не спит) в это время может `add/removeGlobalInterruptParam` → реаллокация под
+итератором. То же касается `beforeEnterSleepCallback`/`afterWakeUpCallback`.
 **Воспроизведение:** `interrupt->cancel()` из колбэка/задачи во время, когда другое ядро
 считает маску пробуждения.
-**Фикс:** тот же мьютекс/стратегия, что и для #2.
-**Связано:** #2.
-
-### ✅ 14. ~~NVS-ключ длиннее 15 символов молча не пишется~~ — ИСПРАВЛЕНО (2026-07-30)
-**Где:** `include/async/Setting.h` — хелпер `assertNvsKeyLength()` + вызов в каждом
-Setting-конструкторе (int/float/double/bool/String); `TAG_SETTING` в `Logging.h`.
-**Контекст:** лимит `NVS_KEY_NAME_MAX_SIZE-1` (15 символов; сам макрос = 16 с учётом
-нул-терминатора) раньше был лишь в комментарии. `putInt`/`putString` молча вернёт 0 →
-настройка не персистится.
-**Фикс (применён):** fail-fast — если `strlen(key) > NVS_KEY_NAME_MAX_SIZE-1`, логируется
-`ESP_LOGE(TAG_SETTING, …)` и зовётся `esp_system_abort("Setting: NVS key longer than 15 chars")`.
-Паттерн тот же, что у `Pin::addInterrupt` (инварианты RTC-pin / edge-type). Сборка
-`setting_simple` — OK.
-**Пример (краш при загрузке):**
-```cpp
-Setting<int> badKey(0, "brightness_level");  // 16 символов > 15 → abort на старте
-```
-```
-E (xxx) SETTING: NVS key 'brightness_level' too long: 16 chars, max 15 (NVS_KEY_NAME_MAX_SIZE-1)
-abort: Setting: NVS key longer than 15 chars
-Backtrace: 0x...        // затем reboot → boot-loop, пока ключ не исправят в прошивке
-```
-
-### 🟡 15. UAF-окно в `~Task`
-**Где:** `src/Task.cpp:21-35`
-**Контекст:** сначала `delete delay/interval`, потом `esp_timer_delete`. Если колбэк таймера
-в полёте и трогает `getDelay()/getInterval()` → чтение освобождённой памяти. Плюс удаление
-Active-задачи из её же колбэка → self-`esp_timer_delete` → дедлок.
-**Фикс:** сначала `esp_timer_delete` (точка синхронизации), потом освобождать члены.
-**Связано:** #1, #7, #9.
+**Фикс:** мьютекс на мутации/итерации, либо перенос мутаций в контекст worker'а — по
+образцу того, как закрыта гонка `coreTasks` (очередь `coreIncomingQueue`;
+EXECUTOR.md §6.3).
 
 ### ⚪ 16. Несогласованное владение в фабриках `Duration`
 **Где:** `src/Duration.cpp:56-66`
 `zero()/us()/ms()` возвращают владеющий `Duration*`, а `now()/maximum()` — по значению →
 естественное `auto d = Duration::ms(1500)` утекает (так в `examples/Duration/main.cpp`).
 Удаляются только `onDelay`/`onRepeat`, забирающие `Duration*`.
-
-### ✅ 17. ~~`State::set` зовёт `onChange` без проверки изменения~~ — ИСПРАВЛЕНО (2026-07-30)
-**Где:** `include/async/State.h` — новый метод `setIfChanged(T)`; `include/async/Setting.h` —
-гард `if (prev == current) return;` в каждой `onChange`-ламбде.
-**Контекст:** `set(T)` безусловно обновляет значение и планировирует колбэк. Для `Setting`
-каждое избыточное `set(same)` → `prefs.begin/put/end` → лишняя запись NVS (износ flash).
-**Фикс (применён):**
-- **`State<T>::setIfChanged(T)`** — новый метод: при `value == currValue` не меняет `prevValue`
-  и **не** планировирует колбэки (возвращает `bool` — изменилось ли). Существующий `set(T)`
-  оставлен безусловным — его могут звать ради принудительного re-trigger. Есть и перегрузка
-  **`setIfChanged(std::function<T(T)>)`** — новое значение вычисляется колбэком из текущего
-  (как у `set(callback)`), возвращает текущее значение. Демо всех 4 вариантов —
-  `examples/State/Simple`.
-- **`Setting`** — обязательная защита на самой границе NVS: `if (prev == current) return;`
-  перед `prefs.begin(...)` в `onChange`. Срабатывает **независимо** от того, через `set` или
-  `setIfChanged` пришли (Setting наследует `setIfChanged` без override).
-Сборка `setting_simple` — OK.
 
 ### ⚪ 18. `RouteData`/`WsData` (`user_ctx`) не освобождаются
 **Где:** `src/HttpServer.cpp:231` и др.
@@ -376,51 +293,146 @@ Active-задачи из её же колбэка → self-`esp_timer_delete` �
 Любой вызов → `undefined reference` (link error).
 **Фикс:** реализовать либо удалить объявления.
 
-### ✅ 21. Deep sleep: латентси пробуждения сдвигала огни с сетки дедлайнов — ИСПРАВЛЕНО (2026-07-30)
-**Где:** `src/Executor.cpp` — калибровочный сон в `startAsync`, измерение+сдвиг в начале цикла
-`mainLoop`, `RTC_DATA_ATTR deepWakeLatencyUs` / `calibIntendedWake`.
+### 🟠 21. Deep sleep: латентси пробуждения сдвигает огни с сетки дедлайнов — ПЕРЕОТКРЫТ (регрессия, 2026-11-07)
+**Где:** `src/Executor.cpp` — восстановление таймингов на wake `:357-369`, программирование
+deep-сна `:270-272`; шкала deep-`now` — `startCycleTimeRts` (`:29`, используется в `:82`)
 **Контекст:** Deep sleep = полный ребут чипа каждый цикл. RTC-таймер будит вовремя, но после
 wake чип ~95–98 мс грузится (bootloader → setup → планировщик), прежде чем задача может
 выполниться. Поэтому Deep-задачи физически срабатывают на ~латентси позже дедлайна — огни
-съезжают с сетки 2000/4000 на ~+96 мс. (Попутно выяснили: deep-`now` через `rtcBoot+esp_timer`
-опережает `rts_us` на ~46 мс → вариант `-46`; правильная шкала — `rts_us()`.)
-**Фикс (применён):**
-- deep-`now` = `rts_us()` — та же шкала, что у дедлайна `next` и у программирования сна.
-- На старте (`startAsync`, power-on, при наличии deep-задач) — один короткий
-  **калибровочный deep sleep** (2 мс) ДО первого user-дедлайна. На его wake (`mainLoop`, до
-  любого user-огня) измеряется латентси `rts_us − calibIntendedWake` (~95–98 мс).
-- Сетка всех deep-дедлайнов `deepTasksTimeFast` **сдвигается вниз** на измеренную латентси
-  (переживает deep sleep через `deepTasks`). Тогда wake происходит на латентси раньше, а после
-  загрузки задача встаёт **ровно в дедлайн** (±джиттер загрузки). Сдвиг ниже дедлайна держит
-  задачу спелой после wake — без повторного deep sleep и пропусков (в отличие от более ранних
-  попыток компенсировать сам сон: ранний wake → не спелая → re-deep-sleep → ребут → пропуск).
-**Проверка:** `boot` (CORE0 2000/4000/6000/8000/10000, CORE1 2500/5000/7500/10000 — ровно с
-первого огня; латентси 95–98 мс, ±десятки мкс между wake), `executor_deep` — то же.
-**Цена:** `setup()` удлиняется на ~98 мс (калибровочный сон + его wake-boot).
+съезжают с сетки (например, 2000/4000 мс) на ~+96 мс.
+**История фикса (важно для восстановления):** 2026-07-30 (коммит `f7e6b79`) сделано две
+вещи: (а) deep-`now` = `rts_us()` — та же шкала, что у дедлайна и у программирования сна
+(эта часть **сохранилась**, `Executor.cpp:29/:82`); (б) **калибровка латентси**: короткий
+калибровочный deep sleep (2 мс) до первого user-дедлайна на «настоящем» старте при наличии
+deep-задач; на его wake измерялась латентси (`RTC_DATA_ATTR deepWakeLatencyUs`,
+`calibIntendedWake`) и сетка `deepTasksTimeFast` сдвигалась вниз — wake происходил на
+латентси раньше, а задача вставала ровно в дедлайн (проверено на `boot`/`executor_deep`:
+ровно с первого огня). **Коммит `695bb65` (2026-08-01) при переходе на `rts_us`-шкалу
+удалил калибровку целиком** — в HEAD и рабочем дереве ни `deepWakeLatencyUs`, ни
+`calibIntendedWake`, ни сдвига сетки нет (grep пуст; восстановление таймингов на wake идёт
+в лоб, `Executor.cpp:357-363`). До 2026-11-07 эта запись ошибочно числилась исправленной.
+**Воспроизведение:** пример `boot` — огни CORE0 2000/4000/… идут с систематическим
+опозданием ~+95–98 мс от сетки дедлайнов (латентси загрузки), вместо «ровно с первого огня».
+**Фикс:** вернуть калибровочный сон + измерение + сдвиг сетки (можно взять из diff
+`f7e6b79` → `695bb65`), либо закрыть радикально через §6.5 EXECUTOR.md (единый механизм
+дедлайнов с компенсацией).
+**Связано:** #10, #25.
+
+### 🟠 22. Deadlock: self-регистрация в worker'е при полной очереди
+**Где:** `src/Task.cpp:147-154` — `registerTask()`: `xQueueSend(coreIncomingQueue[core], &task, portMAX_DELAY)` (`:149`)
+**Контекст:** очередь `coreIncomingQueue[core]` (ёмкость 32, `Executor.cpp:330`) дреинится
+**только** worker'ом этого ядра (начало цикла `coreWorker`, `Executor.cpp:35-40`). Если
+колбэк, исполняемый worker'ом ядра X, регистрирует на ядро X больше 32 задач, не возвращая
+управление в цикл, `xQueueSend` с `portMAX_DELAY` блокирует worker — единственного
+потребителя очереди. Взаимоблокировка навсегда (никто кроме него очередь не чистит).
+**Воспроизведение:** колбэк задачи с `for (int i = 0; i < 40; i++) onOnce(...)` (или
+массовый `onDelay<Light>`) — система замирает, watchdog/abort не гарантирован.
+**Фикс:** в `registerTask` при `xTaskGetCurrentTaskHandle() == coreTaskHandlers[core]` —
+прямой `push_back` (мы и есть поток-потребитель, гонки нет по построению); из любых других
+контекстов — как сейчас через очередь. Альтернатива: отправка без блокировки + fallback.
+**Связано:** механизм очереди `coreIncomingQueue`, закрывший гонку на `coreTasks`
+(исправление удалено из документа; EXECUTOR.md §6.3, §6.9).
+
+### 🟡 23. Утечка отменённых задач после снятия ветки «light с next = ∞» (регрессия Этапа 0)
+**Где:** `src/Executor.cpp` — удалена ветка `else if (getSleepMode() == Light)` для задач с
+`next == UINT64_MAX`; `src/Task.cpp:113-124` — `cancel()` (`cancelled = true; next = UINT64_MAX`)
+**Контекст:** раньше light-задача с `next == ∞` удалялась из `coreTasks` на следующем цикле —
+это ловило и сработавшие light DELAY (переведённые в неактив), и **отменённые** (`cancel()`
+ставит `next = ∞`). Этап 0 убрал ветку как «мёртвую» для сработавших DELAY (они теперь
+удаляются сразу), но для отменённых она была живой: `cancel()` у Light/None-задачи теперь
+оставляет объект в `coreTasks` навсегда — утечка памяти и лишнее время скана (до deep sleep,
+который сотрёт RAM). Active-задачи утекали и раньше (#9). Deep-задачи трогать нельзя
+(позиционный инвариант #6).
+**Воспроизведение:** `auto t = onRepeat<Light>(Duration::ms(1000), cb); …; t->cancel();`
+→ задача больше не срабатывает, но висит в `coreTasks`.
+**Фикс:** ветка удаления для `isCancelled() && sleepMode != Deep && !deepSlotOk` в скане;
+либо флаг «к удалению», взводимый `cancel()` и отрабатываемый worker'ом ядра (cancel может
+звать чужое ядро — мутация вектора только через контекст worker'а).
+**Связано:** #6, #9.
+
+### 🟡 24. `xTaskNotifyGive(NULL)` — notify «в никуда» из afterWakeUp-колбэков окна старта
+**Где:** `src/Task.cpp:150` — `registerTask()`: `xTaskNotifyGive(coreTaskHandlers[core])`;
+`src/Executor.cpp:321-385` — `startAsync()`: afterWakeUp-колбэки (`:365-368`) зовутся
+**до** `xTaskCreatePinnedToCore` (`:376-384`)
+**Контекст:** при выходе из deep sleep `startAsync()` выставляет `isStarted(true)` и зовёт
+`afterWakeUp`-колбэки до создания worker'ов. Регистрация из такого колбэка идёт через
+очередь (уже создана, `:329-331`) + `xTaskNotifyGive` на `coreTaskHandlers[core] == NULL`.
+FreeRTOS при NULL-хендле уведомляет **текущую задачу** (`prvGetTCBFromHandle(NULL) →
+pxCurrentTCB`) — не краш, но notify уходит не тому получателю. Работает «случайно-правильно»:
+задача лежит в очереди и подбирается первым же циклом worker'а (микросекунды спустя).
+**Воспроизведение:** после deep sleep вызвать `onOnce(...)` из `afterWakeUp`-колбэка
+(executor_mixed делает ровно это через deep-колбэк — на железе проходит).
+**Фикс:** guard `if (coreTaskHandlers[core] != NULL)` вокруг notify (как в wake-ветке
+`coreWorker`, `Executor.cpp:215`); либо перенос afterWakeUp-колбэков после создания
+worker'ов.
+**Связано:** механизм очереди `coreIncomingQueue`.
+
+### 🟠 25. Смешение шкал `rts_us`/`esp_timer`: non-deep задачи опаздывают после сна на суммарное время прошлых снов
+**Где:** `src/Executor.cpp:28-29` — `startCycleTime = esp_timer_get_time()` vs
+`startCycleTimeRts = rts_us()`; `now = isDeep ? startCycleTimeRts : startCycleTime`
+(`:82`, скан); light-сон армируется `finalMinSleepTime - esp_timer_get_time()`
+(`:194`, `:202`); `src/Task.cpp:214/:277` — Light next = `rts_us() + delay`
+**Контекст:** `next` Light-задач — в шкале `rts_us()` (gettimeofday: идёт во время light/deep
+сна через RTC, переживает deep-ребут), а сравнение в скане для не-deep задач и армирование
+light-сна — `esp_timer_get_time()` (не отражает время сна; после deep sleep стартует с 0).
+После каждого сна offset между шкалами растёт на длительность сна → «дедлайн ≤ сейчас»
+наступает позже на накопленный offset; светлое сновидение армируется на завышенный интервал.
+Введено коммитом `695bb65` (2026-08-01; тем же коммитом удалена калибровка из #21 — см.
+запись #21). **Проверено на HEAD — воспроизводится там же, т.е. НЕ регрессия Этапа 1.**
+**Воспроизведение (подтверждено на железе, executor_mixed, 2026-08-21):** после
+DEEPSLEEP_RESET Light 1300 мс, зарегистрированная при rts≈2269 (дедлайн 3569), срабатывает
+в 5642 — опоздание ≈2074 мс (offset = время прошлой жизни чипа). Следующая Light 700
+(дедлайн 6342) → срабатывает 8412. В executor_light (POWERON, offset≈0) — идеально ровно.
+**Фикс:** единая шкала для не-deep пути: `now` тоже `rts_us()` (или наоборот — все next в
+esp_timer-шкале, кроме deepTasksTime), армирование light-сна от той же шкалы. Радикально —
+единый механизм дедлайнов из §6.5 EXECUTOR.md (одна величина `next_dl − now`).
+**Связано:** #21, #10.
+
+### ⚪ 26. Примеры pin_read / pin_write / pin_tone не собираются (устаревший API)
+**Где:** `examples/Pin/-ReadPin/main.cpp:32,36`; `-WritePin/main.cpp:20-36`; `-Tone/main.cpp:20-36`
+**Контекст:** лямбды `[](Interrupt *)` вместо `[](Interrupt &)`, `start()` вместо
+`startAsync()`. Сборка всех env 2026-08-21: 3 FAILED / 23 SUCCESS — падения только эти.
+К библиотеке отношения не имеют (примеры отстали от API).
+**Фикс:** обновить примеры под текущий API (`[](Interrupt &)`… `startAsync()`), либо до
+обновления закомментировать секции env в `platformio.ini`, чтобы `pio run` был зелёным.
+
+### ⚪ 27. Устаревшие упоминания `mainLoop` в доках/комментариях
+**Где:** `include/async/Executor.h:30` (комментарий «mainLoop — внутренняя»); `README.md:13,36`
+**Контекст:** функция переименована в `coreWorker` (Этап 1). Сборку не ломает, но дезориентирует.
+**Фикс:** переименовать в комментариях и README при следующей чистке docs.
 
 ---
 
 ## 5. Приоритет и стратегия исправления
 
 **Порядок (критичные, крашатся в реальном использовании):**
-1. **#11** — `1ULL` (один символ × 2).
-2. **#2 + #13** — **сначала принять архитектурное решение**: единый мьютекс на
-   `coreTasks`/`globalInterruptParams` (проще, но добавляет latency в `mainLoop`) vs
-   lock-free очередь отложенных задач с единым потребителем (сложнее, без блокировок). Без
-   этого фиксить вслепую нельзя.
-3. **#3** — порядок re-arm в onDemand (ISR-безопасность #5 — IRAM-разметка — **исправлено**, см. запись).
+1. **#22** — deadlock self-регистрации; фикс в одну проверку
+   `xTaskGetCurrentTaskHandle()` — делать сразу.
+2. **#13** — гонка на `globalInterruptParams`/sleep-колбэках: мьютекс либо перенос мутаций
+   в контекст worker'а (по образцу `coreTasks`/`coreIncomingQueue`).
+3. **#3** — порядок re-arm в onDemand (ISR-цепочка уже IRAM-безопасна).
 4. **#8** — удалённый DoS (cap на тело/кадр).
-5. Далее #6, #7, #9, #15 (жизненный цикл Active/Task), затем средние/низкие.
+5. **#21 + #25 + #10** — тайминг: вернуть компенсацию wake-латентси deep (#21), затем
+   единая шкала времени (в идеале §6.5 EXECUTOR.md закрывает #21/#25/#10 разом).
+6. Далее #6, #7, #9 (жизненный цикл Active/Task), затем средние/низкие
+   (#12, #23, #24; косметика #16, #18–#20, #26, #27).
 
-> **#1** (double-free в `~Task`), **#5** (ISR в IRAM + `gpio_ll_*`), **#14** (abort на длинный NVS-ключ),
-> **#17** (`State::setIfChanged` + NVS-гард в `Setting`), **#21** (компенсация wake-латентси deep sleep) —
-> **исправлены** (2026-07-30). **#6** — частично (слот регистрации). **#4 снят** — перепроверено, не баг:
-> multi-pin pullup будится через ext1 `ALL_LOW`, поэтому будить одной кнопкой нельзя и
-> «ложного срабатывания idle-пина» не возникает (см. запись #4).
+> **Очистка 2026-11-07.** Исправленные записи **#1** (double-free в `~Task`),
+> **#2** (гонка на `coreTasks`, очередь + worker-модель), **#5** (IRAM ISR-цепочки),
+> **#11** (UB `1 << pin` → `1ULL << pin`, оба места в `Executor.cpp`),
+> **#14** (abort на длинный NVS-ключ), **#15** (порядок в `~Task`: сначала
+> `esp_timer_delete`, потом освобождение членов), **#17** (`State::setIfChanged` +
+> NVS-гард) удалены из документа — фиксы проверены в коде. **#21** числился исправленным, но калибровка
+> wake-латентси удалена из кода коммитом `695bb65` (2026-08-01) — **переоткрыт** (см.
+> запись). **#4** закрыт как не-баг (запись сохранена намеренно). **#6** — частично
+> (слот регистрации).
 
 **Как верифицировать фиксы:**
 - Сборка: `pio run -e <env>` (по одному env на проблему, см. §0).
-- #2/#3: `pin_active_interrupt` + дребезг/нагрузка NVS — отсутствие крашей. #5 проверен сборкой `pin_active_interrupt_flash`.
+- #3/#22/#24: `pin_active_interrupt` + дребезг/нагрузка NVS — отсутствие крашей и
+  «глухих» пинов.
 - #8: `http_simple` + curl с огромным `Content-Length`.
+- #21/#25: `boot` / `executor_mixed` — deep-огни по сетке без +96 мс; Light-задачи после
+  DEEPSLEEP_RESET без накопленного опоздания.
 - После правок под S3 — временно собрать `_tmp` env `board = esp32-s3-devkitc-1` (не
   коммитить), см. заметку в §0 про `ASYNC_EXT1_WAKEUP_LOW` и `Uuid.h`.

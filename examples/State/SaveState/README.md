@@ -63,7 +63,32 @@ I (..) MAIN: onChange count of boots: prev 1, current 2
 
 ```bash
 pio run -e state_save -t upload
-PYTHONIOENCODING=utf-8 pio device monitor -p COM10
+PYTHONIOENCODING=utf-8 pio device monitor -p COM11
+```
+
+## Отчёт о проверке
+
+- **Дата:** 2026-11-07
+- **Платформа:** `pioarduino/platform-espressif32#55.03.35`, плата `esp32dev`,
+  порт COM11 (USB-SERIAL CH340)
+- **Фреймворк:** Arduino-ESP32 **3.3.5**, ESP-IDF **5.5.1**
+- **Результат:** OK — за ~14 с наблюдения 13 полных циклов
+  `POWERON_RESET → DEEPSLEEP_RESET × 12`: счётчик монотонно 1…13, на каждом буте
+  `onChange` с корректной парой `prev/current` (0→1, 1→2, …, 12→13). RTC-память
+  переживает сброс чипа; ресет платы при подключении монитора корректно стартует
+  счётчик с 1.
+
+```
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+I (8) MAIN: Count of boots 1
+I (127) MAIN: onChange count of boots: prev 0, current 1
+rst:0x5 (DEEPSLEEP_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+I (8) MAIN: Count of boots 2
+I (58) MAIN: onChange count of boots: prev 1, current 2
+...
+rst:0x5 (DEEPSLEEP_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+I (8) MAIN: Count of boots 13
+I (58) MAIN: onChange count of boots: prev 12, current 13
 ```
 
 При подключении монитор сбрасывает плату (`POWERON_RESET`) → счётчик стартует с `0`.
