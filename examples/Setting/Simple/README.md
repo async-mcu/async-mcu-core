@@ -23,7 +23,8 @@
 
 ## Предусловия
 
-- Плата ESP32 подключена (в тесте — `COM10`, USB-SERIAL CH340).
+- Плата ESP32 подключена (в тесте — `COM10`, USB-SERIAL CH340; **на 2026-11-07 плата
+  на `COM11`** — см. повторную проверку ниже).
 - PlatformIO + платформа `espressif32` (IDF v5.x), фреймворк Arduino.
 - Для TC-03 (чистое состояние) NVS должен быть пуст.
 
@@ -32,7 +33,7 @@
 ```bash
 pio run -e setting_simple                 # сборка
 pio run -e setting_simple -t upload       # прошивка
-pio device monitor -p COM10               # монитор (при подключении сбрасывает плату)
+pio device monitor -p COM11               # монитор (при подключении сбрасывает плату)
 pio run -e setting_simple -t erase        # очистка flash (включая NVS)
 ```
 
@@ -150,3 +151,42 @@ I (216) MAIN: onChange 1 String value: prev Hello world!!!!!!!!!, current Hello 
 
 **Общий результат: PASS.** Персистентность `Setting<T>` в NVS подтверждена на 4
 подряд перезагрузках для всех поддерживаемых типов.
+
+---
+
+## Повторная проверка (2026-11-07)
+
+- **Дата:** 2026-11-07
+- **Платформа:** `pioarduino/platform-espressif32#55.03.35`, плата `esp32dev`,
+  порт **COM11** (USB-SERIAL CH340; порт переехал с COM10)
+- **Фреймворк:** Arduino-ESP32 **3.3.5**, ESP-IDF **5.5.1**
+- **Env:** `setting_simple` (префикс `-` снят после проверки; библиотека содержит
+  фиксы #11/#15 от этой же даты)
+
+**Результат: PASS.** Сборка и прошивка SUCCESS. Персистентность NVS подтверждена на
+двух подряд ресетах в этой сессии: значения продолжились с состояния NVS на момент
+проверки — `int` 1→2→3, строка «Hello world» +3→+6→+9 «!»; `double/float/bool`
+читаются из NVS (prev == current при установке того же значения — NVS-запись при
+этом подавлена гардом #17); оба подписчика `onChange` срабатывают, колбэки
+отложенные (~150 мс — первый цикл планировщика).
+
+```
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+I (14) MAIN: int value 2
+I (150) MAIN: onChange 1 int value: prev 1, current 2
+I (150) MAIN: onChange 2 int value: prev 1, current 2
+I (150) MAIN: onChange 1 double value: prev 2.000000, current 2.000000
+I (156) MAIN: onChange 1 float value: prev 2.000000, current 2.000000
+I (162) MAIN: onChange 1 boolean value: prev 1, current 1
+I (171) MAIN: onChange 1 String value: prev Hello world!!!, current Hello world!!!!!!
+```
+
+Второй ресет: `int value 3` (prev 2 → current 3), строка 6 → 9 «!».
+
+**Устаревшие места исходного протокола выше:**
+- Порт COM10 → фактически **COM11**.
+- **TC-09** описывает поведение **до фикса #14** (issues.md): длинный NVS-ключ
+  тогда молча не сохранялся («известное ограничение»). Сейчас конструктор
+  `Setting` fail-fast: `assertNvsKeyLength()` (`include/async/Setting.h`)
+  логирует `ESP_LOGE` и зовёт `esp_system_abort` — ошибка ловится на первом же
+  старте вместо тихой потери настройки.
