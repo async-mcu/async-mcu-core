@@ -19,7 +19,7 @@ namespace async {
         gpio_int_type_t type;
         std::function<void(Interrupt &)> callback;
 
-            // Конструктор
+        // Конструктор
         Interrupt(Pin & pin, gpio_int_type_t intType, SleepMode sleepMode, std::function<void(Interrupt &)> cb);
         void cancel();
         ~Interrupt();
