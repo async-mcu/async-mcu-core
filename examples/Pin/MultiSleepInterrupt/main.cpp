@@ -11,9 +11,9 @@ Interrupt * interrupt15_Light = nullptr;
 
 void setup() {
   esp_log_level_set(TAG_MAIN, ESP_LOG_INFO);
-  //esp_log_level_set(TAG_INTERRUPT, ESP_LOG_VERBOSE);
-  //esp_log_level_set(TAG_PIN, ESP_LOG_DEBUG);
-  //esp_log_level_set(TAG_EXECUTOR, ESP_LOG_DEBUG);
+  esp_log_level_set(TAG_INTERRUPT, ESP_LOG_VERBOSE);
+  esp_log_level_set(TAG_PIN, ESP_LOG_VERBOSE);
+  esp_log_level_set(TAG_EXECUTOR, ESP_LOG_DEBUG);
 
   initAsync();
 
@@ -34,6 +34,13 @@ void setup() {
       interrupt15_Light->cancel();
       interrupt15_Light = nullptr;
     }
+  });
+
+  // CH340 теряет хвост UART FIFO при уходе в сон — флаш перед сном (State/SleepModes).
+  // Бонус: удлиняет окно бодрствования после каждого wake-диспетча, в котором
+  // успевает сработать динамически зарегистрированный Light-RISING на pin15.
+  beforeEnterSleep([](SleepMode) {
+    vTaskDelay(pdMS_TO_TICKS(100));
   });
 
   startAsync();

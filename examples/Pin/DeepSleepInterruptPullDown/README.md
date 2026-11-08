@@ -92,5 +92,38 @@ pull-резисторами** (ножки «только вход» их лиш�
 
 ```bash
 pio run -e pin_deep_sleep_interrupt_pulldown -t upload
-PYTHONIOENCODING=utf-8 pio device monitor -p COM10
+PYTHONIOENCODING=utf-8 pio device monitor -p COM11
 ```
+
+## Отчёт о проверке
+
+- **Дата:** 2026-11-08
+- **Стенд:** DUT `esp32dev` (COM11, CH340) + стимулятор ESP32-C3 (COM12, см.
+  `auxiliary/`): каналы 1:GPIO3→14 и 6:GPIO10→27, общий GND, перемычка 27→14 снята
+- **Фреймворк:** Arduino-ESP32 **3.3.5**, ESP-IDF **5.5.1** (`pioarduino#55.03.35`)
+- **Изменения при проверке:** добавлен флаш `beforeEnterSleep` (100 мс) — без него
+  CH340 теряет хвост UART FIFO при уходе в сон (приём из State/SleepModes).
+- **Результат:** OK. Полный цикл эмуляции фронтов на двух пинах:
+  deep (ext1 `ANY_HIGH`) → SET 1+6 → `DEEPSLEEP_RESET` + **RISING** на обоих пинах →
+  оба ревернуты → deep заблокирован, **light**-фаза (ожидание отпускания) →
+  SET 0+0 → **FALLING** на обоих → снова deep → цикл повторяется. 2 полных цикла
+  воспроизведены, пропусков нет.
+
+```
+rst:0x1 (POWERON_RESET)  →  esp_deep_sleep_start (ext1 ANY_HIGH)
+SET 1 1 + SET 6 1:
+rst:0x5 (DEEPSLEEP_RESET)
+I (247) MAIN: pin14_RTC onInterrupt::RISING, time: 3091 ms
+I (259) MAIN: pin27_RTC onInterrupt::RISING, time: 3103 ms
+I (265) EXECUTOR: esp_light_sleep_start ...   <- реверты: ждём отпускания в light
+SET 1 0 + SET 6 0:
+I (371) MAIN: pin14_RTC onInterrupt::FALLING, time: 10212 ms
+I (378) MAIN: pin27_RTC onInterrupt::FALLING, time: 10219 ms
+I (384) EXECUTOR: esp_deep_sleep_start ...    <- реверты сброшены
+```
+
+- **Наблюдение (не блокирует):** на POWERON-старте изредка проскакивает спурт-фронт
+  FALLING (~60 мс, без движения линии) — похоже на защёлкнутый статус при
+  `gpio_set_intr_type` на уже-LOW пине; в пример не влияет.
+- Таймер deep-сна армируется мусорным значением (open #10/#25: `sleep time:
+  18446744073…`) — для пробуждения по пинам не мешает.

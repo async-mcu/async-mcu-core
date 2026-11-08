@@ -14,7 +14,7 @@ void setup() {
   esp_log_level_set(TAG_INTERRUPT, ESP_LOG_VERBOSE);
   esp_log_level_set(TAG_PIN, ESP_LOG_VERBOSE);
 
-  startAsync();
+  initAsync();
 
   ESP_LOGI(TAG_MAIN, "Before script time %llu ms", rts_ms());
 

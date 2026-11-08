@@ -36,6 +36,13 @@ void setup() {
     }
   });
 
+  // CH340 почти не отдаёт данные при устойчивом light sleep: без этой задержки
+  // логи (включая строку ухода в сон) замерзают в UART FIFO (тот же приём — в
+  // State/SleepModes и State/SaveState, см. CLAUDE.md «Подводные камни»).
+  beforeEnterSleep([](SleepMode) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  });
+
   startAsync();
 };
 

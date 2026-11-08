@@ -317,16 +317,19 @@ void Pin::removeInterrupt(Interrupt * interrupt) {
     interruptParams.erase(std::remove(interruptParams.begin(), interruptParams.end(), interrupt), interruptParams.end());
     removeGlobalInterruptParam(interrupt);
 
+    // Глобальный interruptSleepMode пересчитывается по ОСТАВШИМСЯ прерываниям ВСЕХ
+    // пинов (Active > Light > Deep). Раньше при опустевшем списке ЭТОГО пина он
+    // безусловно сбрасывался в None — при живых Active-прерываниях других пинов
+    // шедулер считал, что удерживать чип нечем, и уходил в deep sleep (пример
+    // ActiveInterrupt: cancel на одном пине усыплял чип с работающими прерываниями).
     bool active = false;
     bool light = false;
     bool deep = false;
 
     for(auto interruptParam : getGlobalInterruptParams()) {
-        if(interruptParam->pin.getPin() == pinNum) {
-            if(interruptParam->sleepMode == SleepMode::Active) active = true;
-            else if(interruptParam->sleepMode == SleepMode::Light) light = true;
-            else if(interruptParam->sleepMode == SleepMode::Deep) deep = true;
-        }
+        if(interruptParam->sleepMode == SleepMode::Active) active = true;
+        else if(interruptParam->sleepMode == SleepMode::Light) light = true;
+        else if(interruptParam->sleepMode == SleepMode::Deep) deep = true;
     }
 
     if(active) {
@@ -338,12 +341,14 @@ void Pin::removeInterrupt(Interrupt * interrupt) {
     else if(deep) {
         setInterruptSleepMode(SleepMode::Deep);
     }
+    else {
+        setInterruptSleepMode(SleepMode::None);
+    }
 
     if(interruptParams.size() == 0) {
         ESP_LOGD(TAG_PIN, "gpio_intr_disable pin %d!", pinNum);
         gpio_intr_disable(getPin());
         gpio_wakeup_disable(getPin());
-        setInterruptSleepMode(SleepMode::None);
     }
 }
 

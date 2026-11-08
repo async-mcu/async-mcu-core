@@ -38,6 +38,12 @@ void setup() {
     ESP_LOGI(TAG_MAIN, "pin27_RTC onInterrupt::RISING, time %llu ms", rts_ms());
   });
 
+  // CH340 теряет хвост UART FIFO при уходе в сон (и light-фаза возможна при
+  // смешанных ревертах пинов) — флаш перед сном, приём из State/SleepModes.
+  beforeEnterSleep([](SleepMode) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  });
+
   startAsync();
 }
 

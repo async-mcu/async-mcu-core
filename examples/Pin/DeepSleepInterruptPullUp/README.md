@@ -124,5 +124,30 @@ pull-резисторами** (ножки «только вход» их лиш�
 
 ```bash
 pio run -e pin_deep_sleep_interrupt_pullup -t upload
-PYTHONIOENCODING=utf-8 pio device monitor -p COM10
+PYTHONIOENCODING=utf-8 pio device monitor -p COM11
+```
+
+## Отчёт о проверке
+
+- **Дата:** 2026-11-08
+- **Стенд:** DUT `esp32dev` (COM11, CH340) + стимулятор ESP32-C3 (COM12, см.
+  `auxiliary/`): каналы 3:GPIO5→26 и 4:GPIO6→13, общий GND
+- **Фреймворк:** Arduino-ESP32 **3.3.5**, ESP-IDF **5.5.1** (`pioarduino#55.03.35`)
+- **Изменения при проверке:** добавлен флаш `beforeEnterSleep` (100 мс), см. PullDown.
+- **Результат:** OK. Зеркально PullDown, с семантикой **ALL_LOW** (классический ESP32:
+  будит только прижатие ВСЕХ wake-пинов — «all buttons», см. issues.md #4):
+  deep (ext1 ALL_LOW) → SET 3 0 + SET 4 0 (оба к GND) → `DEEPSLEEP_RESET` +
+  **FALLING** на обоих пинах → light-фаза (ожидание отпускания) → SET 3 1 + SET 4 1 →
+  **RISING** на обоих → снова deep. 2 полных цикла, пропусков нет.
+
+```
+SET 3 0 + SET 4 0:
+rst:0x5 (DEEPSLEEP_RESET)
+I (245) MAIN: pin26_RTC onInterrupt::FALLING, time: 3084 ms
+I (257) MAIN: pin13_RTC onInterrupt::FALLING, time: 3097 ms
+I (263) EXECUTOR: esp_light_sleep_start ...
+SET 3 1 + SET 4 1:
+I (370) MAIN: pin13_RTC onInterrupt::RISING, time: 10212 ms
+I (377) MAIN: pin26_RTC onInterrupt::RISING, time: 10219 ms
+I (383) EXECUTOR: esp_deep_sleep_start ...
 ```
