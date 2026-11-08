@@ -36,8 +36,11 @@ void setup() {
   pin14_RTC.addInterrupt<Active>(RISING, [](Interrupt &) {
     ESP_LOGI(TAG_MAIN, "pin14_RTC onInterrupt::RISING, time %llu ms", rts_ms());
 
+    // Контракт (фикс #12): cancel() освобождает объект — сразу обнуляем
+    // указатель, повторный cancel по висячей ссылке был бы двойным удалением.
     if(pin19RisingInterrupt != nullptr) {
       pin19RisingInterrupt->cancel();
+      pin19RisingInterrupt = nullptr;
     }
   });
 

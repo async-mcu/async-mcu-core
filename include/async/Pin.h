@@ -52,6 +52,7 @@ namespace async {
         Interrupt * addInterrupt(SleepMode sleepMode, gpio_int_type_t type, std::function<void(Interrupt &)> callback);
     public:
         Pin(int pin, int mode = INPUT_PULLUP, int defaultLevel = HIGH);
+        ~Pin();   // #12: освобождает все Interrupt этого пина
         gpio_num_t IRAM_ATTR getPin();
         uint8_t getMode();
         void setMode(uint8_t mode);

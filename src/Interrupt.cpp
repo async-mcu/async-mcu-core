@@ -17,8 +17,13 @@ namespace async {
     }
 
     void Interrupt::cancel() {
-        ESP_LOGD(TAG_INTERRUPT, "Cancel interrupt pin %d", pin.getPin());
+        ESP_LOGD(TAG_INTERRUPT, "Cancel interrupt pin %d (object freed)", pin.getPin());
         pin.removeInterrupt(this);
-        ESP_LOGD(TAG_INTERRUPT, "Cancel interrupt on pin %d", pin.getPin());
+        // #12: отмена = освобождение объекта (владение возвращал addInterrupt,
+        // но API не подталкивало к delete — каждый cancel утекал объект и
+        // std::function). Указатель после cancel() НЕВАЛИДЕН.
+        // ~Interrupt зовёт removeInterrupt повторно — это no-op: объект уже
+        // убран из interruptParams/globalInterruptParams.
+        delete this;
     }
 }

@@ -45,7 +45,8 @@ namespace async {
             uint64_t localMinSleep = UINT64_MAX;
 
             for (int i = 0; i < coreTasks[core].size(); i++) {
-                if (coreTasks[core][i]->isCertainly()) {
+                // #33: отменённая certainly-задача не исполняется (cancel до подбора)
+                if (coreTasks[core][i]->isCertainly() && !coreTasks[core][i]->isCancelled()) {
                     toExecute.push_back(coreTasks[core][i]);
                     coreTasks[core][i]->setCertainly(false);
 

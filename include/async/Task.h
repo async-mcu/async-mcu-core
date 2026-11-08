@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <vector>
+#include <atomic>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <async/Globals.h>
@@ -21,7 +22,9 @@ class Task {
         Duration * interval = nullptr;
         esp_timer_handle_t * timer = nullptr;
         void * value = nullptr;
-        bool counted = false;     // учтена ли в activeTasksCount
+        // Билет завершения для Active-задач (#7): атомарный обмен true->false
+        // решает, КТО делает единственный декремент activeTasksCount.
+        std::atomic<bool> counted{false};
         bool cancelled = false;   // задача отменена (cancel)
 
     public: 
@@ -67,6 +70,7 @@ class Task {
         bool isCancelled();
         bool isCounted();
         void setCounted(bool value);
+        bool tryClaimFinale();    // атомарно забрать право завершения (counted -> false)
 
         void cancel();
 };
@@ -83,7 +87,6 @@ class Task {
     void afterWakeUp(std::function<void(SleepMode)> callback);
 
     void callTaskExecute(void *arg);
-    void notifyActiveTaskCancelled(Task & task);
 
     Task * onDelay(SleepMode sleepMode, Duration * delay, Core core, std::function<void(Task &)> callback);
     template<SleepMode sleepMode>

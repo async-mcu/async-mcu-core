@@ -17,10 +17,25 @@ Task::Task(Type type, SleepMode sleepMode, Core core, Duration * delay, std::fun
     ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
 }
 
-Task::Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task &)> callback)
+    Task::Task(Type type, SleepMode sleepMode, Core core, std::function<void(Task &)> callback)
     : type(type), sleepMode(sleepMode), core(core), callback(callback) {
     ESP_LOGV(TAG_TASK, "Create task mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
-}
+    }
+
+    // ===== Финализация Active-задач (#7/#32) =====
+    // Мьютекс сериализует «claim -> декремент -> остановка таймера -> удаление»
+    // между диспетчем esp_timer (callTaskExecute) и произвольным cancel().
+    // Инвариант: объект Active-задачи удаляется ТОЛЬКО в контексте диспатча,
+    // под этим мьютексом; проигравший claim объект не трогает вовсе.
+    // Создаётся лениво при первой Active-регистрации (контекст пользователя;
+    // до старта воркеров выполнение однопоточное).
+    static SemaphoreHandle_t activeFinalizeMutex = NULL;
+
+    static void ensureActiveFinalizeLock() {
+        if (activeFinalizeMutex == NULL) {
+            activeFinalizeMutex = xSemaphoreCreateMutex();
+        }
+    }
 
 Task::~Task() {
     ESP_LOGV(TAG_TASK, "Remove task sleep mode %s, type %s!", modeToStr(sleepMode), typeToStr(type));
@@ -112,15 +127,34 @@ void Task::setCounted(bool value) {
     this->counted = value;
 }
 
-void Task::cancel() {
-    notifyActiveTaskCancelled(*this);
+bool Task::tryClaimFinale() {
+    return counted.exchange(false, std::memory_order_acq_rel);
+}
 
-    if(timer != NULL) {
-        esp_timer_delete(*timer);
-        delete timer;
-        timer = nullptr;
+void Task::cancel() {
+    // Active-задачи (DELAY/REPEAT): завершение через claim под мьютексом
+    // финализации — ровно один декремент (#7), остановка вооружённого таймера
+    // (#32: delete без stop не останавливает armed esp_timer), и никакого
+    // обращения к объекту после проигранного claim (диспетч мог уже удалить).
+    // Объект здесь НЕ удаляем: идущий диспатч удалит после execute; если диспатча
+    // не будет — residual-утечка (класс #23, задокументирована).
+    if (sleepMode == SleepMode::Active && (type == Type::DELAY || type == Type::REPEAT)) {
+        ensureActiveFinalizeLock();
+        xSemaphoreTake(activeFinalizeMutex, portMAX_DELAY);
+        if (tryClaimFinale()) {
+            activeTasksCount--;
+            if (timer != nullptr) {
+                esp_timer_stop(*timer);
+                esp_timer_delete(*timer);
+                delete timer;
+                timer = nullptr;
+            }
+        }
+        xSemaphoreGive(activeFinalizeMutex);
+        return;
     }
 
+    // Не-Active (Light/Deep/None): пометить — скан воркера не исполнит.
     cancelled = true;
     next = UINT64_MAX;
 }
@@ -147,12 +181,22 @@ void Task::cancel() {
     // шёл только из worker-потока ядра-адресата (исключает гонку с кросс-контекстной
     // регистрацией из ISR-dispatcher / соседнего ядра / колбэков). См. EXECUTOR.md §6.3, §6.9.
     static void registerTask(Core core, Task * task) {
-        if (isStarted() && coreIncomingQueue[core] != NULL) {
-            xQueueSend(coreIncomingQueue[core], &task, portMAX_DELAY);
-            xTaskNotifyGive(coreTaskHandlers[core]);
-        } else {
+        if (!isStarted() || coreIncomingQueue[core] == NULL) {
             coreTasks[core].push_back(task);
+            return;
         }
+        // #22: self-регистрация — текущий контекст и есть worker ядра-адресата
+        // (колбэк исполняется им). Единственный потребитель очереди заблокирован
+        // в этом колбэке: заполненная очередь + portMAX_DELAY = вечный дедлок.
+        // Мутируем вектор напрямую — по построению worker-модели (#2) только
+        // этот поток трогает coreTasks своего ядра, а итерации скана в момент
+        // исполнения колбэков нет (скан завершается до toExecute).
+        if (xTaskGetCurrentTaskHandle() == coreTaskHandlers[core]) {
+            coreTasks[core].push_back(task);
+            return;
+        }
+        xQueueSend(coreIncomingQueue[core], &task, portMAX_DELAY);
+        xTaskNotifyGive(coreTaskHandlers[core]);
     }
 
     void beforeEnterSleep(std::function<void(SleepMode)> callback) {
@@ -167,17 +211,34 @@ void Task::cancel() {
         Task *task = (Task *)arg;
         task->execute();
 
-        // одноразовая active-задача отстрелялась — снимаем с учёта
-        if (task->getSleepMode() == SleepMode::Active && task->getType() == Type::DELAY && task->isCounted()) {
-            activeTasksCount--;
-            task->setCounted(false);
+        // Одноразовая Active-задача отстрелялась: единая точка финализации
+        // (#7/#9/#32). Claim даёт ровно один декремент (конкурентный cancel()
+        // под тем же мьютексом либо сделал свой, либо получит claim=false и
+        // не тронет объект). Удаление — всегда здесь, в контексте диспатча.
+        // Контракт: указатель onDelay<Active> невалиден после срабатывания.
+        if (task->getSleepMode() == SleepMode::Active && task->getType() == Type::DELAY) {
+            ensureActiveFinalizeLock();
+            xSemaphoreTake(activeFinalizeMutex, portMAX_DELAY);
+            if (task->tryClaimFinale()) {
+                activeTasksCount--;
+            }
+            delete task;
+            xSemaphoreGive(activeFinalizeMutex);
+            return;
         }
-    }
 
-    void notifyActiveTaskCancelled(Task & task) {
-        if (task.getSleepMode() == SleepMode::Active && task.isCounted()) {
-            activeTasksCount--;
-            task.setCounted(false);
+        // Периодическая Active: если её забрал cancel (counted уже false) —
+        // этот выстрел был последним, объект освобождаем здесь же (#32).
+        if (task->getSleepMode() == SleepMode::Active && task->getType() == Type::REPEAT) {
+            if (!task->isCounted()) {
+                ensureActiveFinalizeLock();
+                xSemaphoreTake(activeFinalizeMutex, portMAX_DELAY);
+                if (!task->isCounted()) {   // перепроверка под локом
+                    delete task;
+                }
+                xSemaphoreGive(activeFinalizeMutex);
+            }
+            return;
         }
     }
 
@@ -185,6 +246,7 @@ void Task::cancel() {
         auto task = new Task(Type::DELAY, sleepMode, core, delay, callback);
 
         if (sleepMode == SleepMode::Active) {
+            ensureActiveFinalizeLock();   // мьютекс финализации до возможного выстрела (#7/#32)
             activeTasksCount++;
             task->setCounted(true);
             esp_timer_handle_t * _timer = new esp_timer_handle_t;
@@ -247,6 +309,7 @@ void Task::cancel() {
         auto task = new Task(Type::REPEAT, sleepMode, core, startDelay, interval, callback);
 
         if (sleepMode == SleepMode::Active) {
+            ensureActiveFinalizeLock();   // мьютекс финализации до возможного выстрела (#7/#32)
             activeTasksCount++;
             task->setCounted(true);
             esp_timer_handle_t * _timer = new esp_timer_handle_t;

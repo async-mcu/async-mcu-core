@@ -102,6 +102,12 @@ Pin::Pin(int pin, int mode, int defaultLevel)
             }
         }
         
+        // #3: флаг снимается ДО включения прерывания. Раньше порядок был обратный
+        // (enable → колбэки → флаг): фронт в этом окне заставлял ISR дропнуть заявку
+        // (interrupted ещё true) при уже выключенном прерывании — и пин навсегда
+        // замолкал. Теперь такой фронт ставит новую заявку: ISR видит
+        // interrupted == false, ставит флаг и кладёт Pin* в очередь.
+        interrupted = false;
         gpio_intr_enable(pinNum);
 
         for(auto interruptParam : interruptParams) {
@@ -139,8 +145,6 @@ Pin::Pin(int pin, int mode, int defaultLevel)
                 interruptParam->callback(*interruptParam);
             }
         }
-
-        interrupted = false;
     });
 
     onInit(CURRENT_CORE, [this](Task &) {
@@ -157,6 +161,25 @@ Pin::Pin(int pin, int mode, int defaultLevel)
                 break;
         }
     });
+}
+
+// Destructor
+Pin::~Pin() {
+    // #12: Interrupt-объекты пина не освобождались при уничтожении Pin.
+    // Забираем вектор целиком (чтобы ~Interrupt -> removeInterrupt не мутировал
+    // его во время итерации) и удаляем каждый: removeInterrupt сам убирает из
+    // globalInterruptParams, пересчитывает interruptSleepMode и глушит
+    // прерывание пина при опустевшем списке.
+    std::vector<Interrupt *> params;
+    params.swap(interruptParams);
+    for (Interrupt * i : params) {
+        delete i;
+    }
+    // Residual (класс #23): onDemand-задача interruptTask (с [this]-захватом)
+    // остаётся в coreTasks — исполняться она больше не будет (прерывание
+    // глушится), но память за ней уйдёт только с общим рефакторингом
+    // жизненного цикла: мутация coreTasks из произвольного контекста
+    // запрещена (#2).
 }
 
 // Mode configuration
