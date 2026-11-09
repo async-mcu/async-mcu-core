@@ -1,4 +1,4 @@
-"""stimctl.py — хост-контроллер платы-стимулятора (auxiliary/Stimulus).
+"""stimctl.py — хост-контроллер платы-стимулятора (test/Stimulus).
 
 Прошейте stimulus на второй МК (env: -test_stimulus (прошивается на C3, порт см. pio device list)), соедините каналы с DUT
 (карта — в шапке main.cpp стимулятора) и общий GND. Дальше отсюда:

@@ -131,7 +131,7 @@ PYTHONIOENCODING=utf-8 pio device monitor -p COM11
 
 - **Дата:** 2026-11-08
 - **Стенд:** DUT `esp32dev` (COM11, CH340) + стимулятор ESP32-C3 (COM12, см.
-  `auxiliary/`): каналы 3:GPIO5→26 и 4:GPIO6→13, общий GND
+  `test/`): каналы 3:GPIO5→26 и 4:GPIO6→13, общий GND
 - **Фреймворк:** Arduino-ESP32 **3.3.5**, ESP-IDF **5.5.1** (`pioarduino#55.03.35`)
 - **Изменения при проверке:** добавлен флаш `beforeEnterSleep` (100 мс), см. PullDown.
 - **Результат:** OK. Зеркально PullDown, с семантикой **ALL_LOW** (классический ESP32:

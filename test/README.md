@@ -1,4 +1,4 @@
-# auxiliary — стенд автономной проверки Pin-примеров
+# test — стенд автономной проверки Pin-примеров
 
 Второй МК (ESP32-C3, env `test_stimulus`) подаёт тестовые сигналы на пины DUT
 (классический ESP32), пока тот бодрствует или спит. позволяет проверять
@@ -9,12 +9,12 @@
 | Что | Где |
 |---|---|
 | Прошивка стимулятора (голый Arduino, без библиотеки) | `Stimulus/main.cpp`, env `test_stimulus` |
-| Пробник уровней пинов (диагностика проводки) | `PinProbe/main.cpp`, env `-aux_pinprobe` |
-| Репро #7 (гонка декремента) — регресс-тест | `ActiveRace/main.cpp`, env `-aux_activerace` |
-| Репро #9 (утечка сработавших Active/tone) | `ActiveLeak/main.cpp`, env `-aux_activeleak` |
-| Матрица отмены задач (14 кейсов, приёмка фиксов #7/#32/#33) | `CancelMatrix/main.cpp`, env `-aux_cancelmatrix` |
-| Репро #12 (утечка объектов Interrupt: cancel/~Pin) | `InterruptLeak/main.cpp`, env `-aux_interruptleak` |
-| Репро #22 (deadlock self-регистрации) — регресс-тест | `SelfRegDeadlock/main.cpp`, env `-aux_selfregdeadlock` |
+| Пробник уровней пинов (диагностика проводки) | `PinProbe/main.cpp`, env `-test_pinprobe` |
+| Репро #7 (гонка декремента) — регресс-тест | `ActiveRace/main.cpp`, env `-test_activerace` |
+| Репро #9 (утечка сработавших Active/tone) | `ActiveLeak/main.cpp`, env `-test_activeleak` |
+| Матрица отмены задач (14 кейсов, приёмка фиксов #7/#32/#33) | `CancelMatrix/main.cpp`, env `-test_cancelmatrix` |
+| Репро #12 (утечка объектов Interrupt: cancel/~Pin) | `InterruptLeak/main.cpp`, env `-test_interruptleak` |
+| Репро #22 (deadlock self-регистрации) — регресс-тест | `SelfRegDeadlock/main.cpp`, env `-test_selfregdeadlock` |
 | Хост: команды стимулятору | `../tools/stimctl.py` |
 | Хост: чтение COM DUT (reset/read/wait) | `../tools/pincheck.py` |
 

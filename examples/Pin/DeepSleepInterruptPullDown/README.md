@@ -99,7 +99,7 @@ PYTHONIOENCODING=utf-8 pio device monitor -p COM11
 
 - **Дата:** 2026-11-08
 - **Стенд:** DUT `esp32dev` (COM11, CH340) + стимулятор ESP32-C3 (COM12, см.
-  `auxiliary/`): каналы 1:GPIO3→14 и 6:GPIO10→27, общий GND, перемычка 27→14 снята
+  `test/`): каналы 1:GPIO3→14 и 6:GPIO10→27, общий GND, перемычка 27→14 снята
 - **Фреймворк:** Arduino-ESP32 **3.3.5**, ESP-IDF **5.5.1** (`pioarduino#55.03.35`)
 - **Изменения при проверке:** добавлен флаш `beforeEnterSleep` (100 мс) — без него
   CH340 теряет хвост UART FIFO при уходе в сон (приём из State/SleepModes).
